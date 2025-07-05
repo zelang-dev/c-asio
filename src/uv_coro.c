@@ -597,6 +597,7 @@ static void fs_cb(uv_fs_t *req) {
             case UV_FS_FDATASYNC:
             case UV_FS_FSYNC:
             case UV_FS_OPEN:
+            case UV_FS_MKSTEMP:
             case UV_FS_WRITE:
             case UV_FS_SENDFILE:
             case UV_FS_ACCESS:
@@ -611,12 +612,20 @@ static void fs_cb(uv_fs_t *req) {
                 data = dirents;
                 break;
             case UV_FS_STATFS:
+                override = true;
+                memcpy(fs->statfs, fs_ptr, sizeof(fs->statfs));
+                data = fs->statfs;
+                break;
             case UV_FS_LSTAT:
             case UV_FS_STAT:
             case UV_FS_FSTAT:
                 override = true;
                 memcpy(fs->stat, uv_fs_get_statbuf(req), sizeof(fs->stat));
                 data = fs->stat;
+                break;
+            case UV_FS_MKDTEMP:
+                override = true;
+                data = (void_t)req->path;
                 break;
             case UV_FS_READLINK:
                 override = true;
@@ -1190,25 +1199,25 @@ uv_statfs_t *fs_statfs(string_t path) {
     return (uv_statfs_t *)fs_start(uv_args, UV_FS_STATFS, 1, true).object;
 }
 
-uv_file fs_mkstemp(string_t tpl) {
+uv_file fs_mkstemp(string tpl) {
     uv_args_t *uv_args = uv_arguments(1, false);
     $append_string(uv_args->args, tpl);
 
     return (uv_file)fs_start(uv_args, UV_FS_MKSTEMP, 1, true).integer;
 }
 
-int fs_mkdtemp(string_t tpl) {
+string fs_mkdtemp(string tpl) {
     uv_args_t *uv_args = uv_arguments(1, false);
     $append_string(uv_args->args, tpl);
 
-    return fs_start(uv_args, UV_FS_MKDTEMP, 1, true).integer;
+    return fs_start(uv_args, UV_FS_MKDTEMP, 1, true).char_ptr;
 }
 
-RAII_INLINE bool fs_exists(string_t path) {
+RAII_INLINE bool file_exists(string_t path) {
     return fs_access(path, F_OK) == 0;
 }
 
-RAII_INLINE size_t fs_filesize(string_t path) {
+RAII_INLINE size_t file_size(string_t path) {
     uv_stat_t *stat = fs_stat(path);
     if (!is_empty(stat))
         return (size_t)stat->st_size;
