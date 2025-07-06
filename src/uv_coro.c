@@ -1438,6 +1438,77 @@ string stream_read(uv_stream_t *handle) {
     return uv_start(uv_args, UV_STREAM, 1, false).char_ptr;
 }
 
+static void generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+    uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(stream));
+    routine_t *co = uv->context;
+
+    if (nread < 0) {
+        if (nread != UV_EOF)
+            uv_log_error(nread);
+
+        uv_read_stop(stream);
+        RAII_FREE(buf->base);
+        coro_await_exit(co, nullptr, nread, (nread != UV_EOF));
+    } else {
+        if (nread > 0)
+            uv->bufs.base = buf->base;
+        else
+            uv->bufs.base = nullptr;
+
+        coro_context_set(co, co);
+        coro_await_upgrade(co, ((nread > 0) ? buf->base : nullptr), nread, false, false, true);
+        if (nread > 0) {
+            RAII_FREE(buf->base);
+            uv->bufs.base = nullptr;
+        }
+    }
+}
+
+static void_t stream_yield(params_t args) {
+    uv_args_t *uv = args->object;
+    uv_handle_t *stream = handler(uv->args[0].object);
+    routine_t *co = coro_active();
+    int result = uv_read_start((uv_stream_t *)stream, alloc_cb, generator_cb);
+
+    if (result) {
+        return uv_coro_abort(nullptr, result, co);
+    }
+
+    uv->context = co;
+    uv_handle_set_data(stream, (void_t)uv);
+    while (!coro_terminated(co)) {
+        if (!is_empty(uv->bufs.base) && simd_strlen(uv->bufs.base) > 0)
+            yielding(uv->bufs.base);
+        else
+            yield();
+    }
+
+    uv_arguments_free(uv);
+    return 0;
+}
+
+string stream_get(uv_stream_t *handle) {
+    if (is_empty(handle))
+        return nullptr;
+
+    generator_t gen = nullptr;
+    uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
+    if (is_type(uv_args, UV_CORO_ARGS) && $size(uv_args->args) == 2
+        && is_type(uv_args->args[1].object, RAII_YIELD)) {
+        uv_args->args[0].object = handle;
+        gen = (generator_t)uv_args->args[1].object;
+        coro_context_set(uv_args->context, coro_active());
+    } else {
+        uv_args = uv_arguments(2, false);
+        $append(uv_args->args, handle);
+        gen = generator(stream_yield, 1, uv_args);
+        $append(uv_args->args, gen);
+        uv_handle_set_data(handler(handle), (void_t)uv_args);
+    }
+
+    return yield_for(gen).char_ptr;
+}
+
 int stream_shutdown(uv_stream_t *handle) {
     if (is_empty(handle))
         return coro_err_code();
