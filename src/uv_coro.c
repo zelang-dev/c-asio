@@ -628,6 +628,7 @@ static void fs_cb(uv_fs_t *req) {
                 data = (void_t)req->path;
                 break;
             case UV_FS_READLINK:
+            case UV_FS_REALPATH:
                 override = true;
                 data = fs_ptr;
                 break;
@@ -1164,18 +1165,18 @@ int fs_symlink(string_t path, string_t new_path, int flags) {
     return fs_start(uv_args, UV_FS_SYMLINK, 3, true).integer;
 }
 
-int fs_readlink(string_t path) {
+string fs_readlink(string_t path) {
     uv_args_t *uv_args = uv_arguments(1, false);
     $append_string(uv_args->args, path);
 
-    return fs_start(uv_args, UV_FS_READLINK, 1, true).integer;
+    return fs_start(uv_args, UV_FS_READLINK, 1, true).char_ptr;
 }
 
-int fs_realpath(string_t path) {
+string fs_realpath(string_t path) {
     uv_args_t *uv_args = uv_arguments(1, false);
     $append_string(uv_args->args, path);
 
-    return fs_start(uv_args, UV_FS_REALPATH, 1, true).integer;
+    return fs_start(uv_args, UV_FS_REALPATH, 1, true).char_ptr;
 }
 
 uv_stat_t *fs_stat(string_t path) {
