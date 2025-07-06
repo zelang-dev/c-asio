@@ -489,7 +489,8 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     }
 
     coro_await_finish(co, ((nread > 0) ? buf->base : nullptr), nread, false);
-    RAII_FREE(buf->base);
+    if (nread > 0)
+        RAII_FREE(buf->base);
 }
 
 static void tls_read_cb(uv_tls_t *strm, ssize_t nread, const uv_buf_t *buf) {
@@ -2105,14 +2106,14 @@ static void spawn_free(spawn_t child) {
     uv_stream_t *stream = nullptr;
     int i;
 
-    if (uv_is_active(handle) || !uv_is_closing(handle))
-        uv_close(handle, nullptr);
-
     for (i = 0; i < child->handle->stdio_count; i++) {
         if (!is_empty(stream = child->handle->stdio[i].data.stream)
-            && (size_t)child->handle->stdio[i].data.fd > 4096)
+            && (size_t)child->handle->stdio[i].data.fd > 0x4096)
             uv_close_free(stream);
     }
+
+    if (uv_is_active(handle) || !uv_is_closing(handle))
+        uv_close(handle, nullptr);
 
     RAII_FREE(child->handle);
     child->type = RAII_ERR;
