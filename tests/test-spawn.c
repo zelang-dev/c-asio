@@ -1,5 +1,7 @@
 #include "assertions.h"
 
+static int output_count = 0;
+
 void_t worker_misc(params_t args) {
     ASSERT_WORKER(($size(args) == 3));
     sleepfor(args[0].u_int);
@@ -12,10 +14,11 @@ int _on_exit(int64_t exit_status, int term_signal) {
     ASSERT_EQ(0, term_signal);
 }
 
-int _on_output(string_t buf) {
-    ASSERT_TRUE(is_str_in(buf, "This is stdout"));
-    ASSERT_TRUE(is_str_in(buf, "Sleeping..."));
-    ASSERT_TRUE(is_str_in(buf, "`test-dir`"));
+int _on_output(uv_stream_t *input, string buf, uv_stream_t *error) {
+    output_count++;
+    ASSERT_TRUE(is_str_in(buf, "This is stdout")
+                || is_str_in(buf, "Sleeping...")
+                || is_str_in(buf, "`test-dir` argument received"));
     ASSERT_FALSE(is_str_in(buf, "Exiting"));
 }
 
@@ -28,7 +31,7 @@ TEST(spawn) {
 
     ASSERT_TRUE(is_process(child));
     ASSERT_EQ(0, spawn_atexit(child, (spawn_cb)_on_exit));
-    ASSERT_EQ(0, spawn_out(child, (stdout_cb)_on_output));
+    ASSERT_EQ(0, spawn_handler(child, (spawn_handler_cb)_on_output));
     ASSERT_FALSE(result_is_ready(res));
     ASSERT_TRUE(spawn_pid(child) > 0);
 
@@ -38,6 +41,7 @@ TEST(spawn) {
 
     ASSERT_TRUE(result_is_ready(res));
     ASSERT_STR(result_for(res).char_ptr, "finish");
+    ASSERT_EQ(3, output_count);
 
     return 0;
 }

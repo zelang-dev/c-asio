@@ -62,7 +62,7 @@ static void_t uv_coro_sockaddr(const char *host, int port, struct sockaddr_in6 *
 }
 
 static void uv_arguments_free(uv_args_t *uv_args) {
-    if (is_type(uv_args, UV_CORO_ARGS)) {
+    if (is_defined(uv_args)) {
         if (!uv_args->is_freeable) {
             array_delete(uv_args->args);
             memset(uv_args, RAII_ERR, sizeof(raii_type));
@@ -339,7 +339,7 @@ static void on_listen_handshake(uv_tls_t *ut, int status) {
 static void connection_cb(uv_stream_t *server, int status) {
     uv_args_t *uv = nullptr;
     void_t check = uv_handle_get_data(handler(server));
-    if (is_type(check, UV_CORO_ARGS))
+    if (is_defined(check))
         uv = (uv_args_t *)check;
     else
         uv = (uv_args_t *)((evt_ctx_t *)check)->data;
@@ -1385,11 +1385,11 @@ static void_t stream_client(params_t args) {
     uv_stream_t *client = (uv_stream_t *)args[0].object;
     stream_cb handlerFunc = (stream_cb)args[1].func;
     raii_type type = ((uv_args_t *)uv_handle_get_data(handler(client)))->bind_type;
-    uv_args_t *uv_args = uv_arguments(1, true);
+    //uv_args_t *uv_args = uv_arguments(1, true);
 
-    $append(uv_args->args, client);
-    uv_args->bind_type = type;
-    uv_handle_set_data(handler(client), (void_t)uv_args);
+    //$append(uv_args->args, client);
+    //uv_args->bind_type = type;
+    uv_handle_set_data(handler(client), nullptr);
     if (type == RAII_SCHEME_TLS)
         defer(tls_close_free, client);
     else
@@ -1410,7 +1410,7 @@ int stream_write(uv_stream_t *handle, string_t text) {
         return RAII_ERR;
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_type(uv_args, UV_CORO_ARGS) || is_tls(handle)) {
+    if (is_defined(uv_args) || is_tls(handle)) {
         uv_args->args[0].object = handle;
     } else {
         uv_args = uv_arguments(1, true);
@@ -1429,7 +1429,7 @@ string stream_read(uv_stream_t *handle) {
         return nullptr;
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_type(uv_args, UV_CORO_ARGS) || is_tls(handle)) {
+    if (is_defined(uv_args) || is_tls(handle)) {
         uv_args->args[0].object = handle;
     } else {
         uv_args = uv_arguments(1, true);
@@ -1497,12 +1497,12 @@ string stream_get(uv_stream_t *handle) {
 
     generator_t gen = nullptr;
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_type(uv_args, UV_CORO_ARGS) && uv_args->is_generator) {
+    if (is_defined(uv_args) && uv_args->is_generator) {
         uv_args->args[0].object = handle;
         gen = (generator_t)uv_args->args[1].object;
         coro_context_set(uv_args->context, coro_active());
     } else {
-        if (uv_args && uv_args->context && coro_terminated(uv_args->context))
+        if (is_undefined(uv_args))
             return nullptr;
 
         uv_args = uv_arguments(2, false);
@@ -1521,7 +1521,7 @@ int stream_shutdown(uv_stream_t *handle) {
         return coro_err_code();
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_type(uv_args, UV_CORO_ARGS) || is_tls(handle)) {
+    if (is_defined(uv_args) || is_tls(handle)) {
         uv_args->args[0].object = handle;
     } else {
         uv_args = uv_arguments(1, true);
@@ -1608,7 +1608,7 @@ uv_stream_t *stream_listen(uv_stream_t *stream, int backlog) {
 
     uv_args_t *uv_args = nullptr;
     void_t check = uv_handle_get_data(handler(stream));
-    if (is_type(check, UV_CORO_ARGS)) {
+    if (is_defined(check)) {
         uv_args = (uv_args_t *)check;
     } else {
         uv_args = (uv_args_t *)((evt_ctx_t *)check)->data;
@@ -1868,7 +1868,7 @@ RAII_INLINE int udp_send_packet(udp_packet_t *connected, string_t message) {
 
     size_t size = simd_strlen(message);
     uv_args_t *uv_args = nullptr;
-    if (is_type(connected->args, UV_CORO_ARGS)) {
+    if (is_defined(connected->args)) {
         uv_args->args[0].object = connected->req;
         uv_args->args[1].object = connected->handle;
         uv_args->args[2].object = (void_t)connected->addr;
@@ -2107,6 +2107,18 @@ static uv_tcp_t *tls_tcp_create(void_t extra) {
     return tcp;
 }
 
+static RAII_INLINE uv_stream_t *ipc_in(spawn_t _in) {
+    return _in->handle->stdio[0].data.stream;
+}
+
+static RAII_INLINE uv_stream_t *ipc_out(spawn_t out) {
+    return out->handle->stdio[1].data.stream;
+}
+
+static RAII_INLINE uv_stream_t *ipc_err(spawn_t err) {
+    return err->handle->stdio[2].data.stream;
+}
+
 static void spawn_free(spawn_t child) {
     uv_handle_t *handle = handler(&child->process);
     uv_stream_t *stream = nullptr;
@@ -2141,16 +2153,18 @@ static void spawn_exit_cb(uv_process_t *handle, int64_t exit_status, int term_si
 static void_t stdio_handler(params_t uv_args) {
     uv_args_t *uv = uv_args->object;
     spawn_t child = uv->args[0].object;
-    stdio_cb std = (stdio_cb)uv->args[1].func;
-    uv_stream_t *io = uv->args[2].object;
+    spawn_handler_cb std = (spawn_handler_cb)uv->args[1].func;
+    uv_stream_t *io_in = uv->args[2].object;
+    uv_stream_t *io_out = uv->args[3].object;
+    uv_stream_t *io_err = uv->args[4].object;
     string data = nullptr;
     uv_arguments_free(uv);
 
-    while ((data = stream_get(io)) && !coro_terminated(child->context)) {
-        std(data);
+    while ((data = stream_get(io_out)) && !coro_terminated(child->context)) {
+        std(io_in, data, io_err);
     }
 
-    uv_read_stop(io);
+    uv_read_stop(io_out);
     return nullptr;
 }
 
@@ -2313,33 +2327,13 @@ RAII_INLINE bool is_spawning(spawn_t child) {
     return is_process(child) && result_is_ready(child->id) == false;
 }
 
-int spawn_in(spawn_t child, stdin_cb std_func) {
-    uv_args_t *uv_args = uv_arguments(3, false);
+int spawn_handler(spawn_t child, spawn_handler_cb std_func) {
+    uv_args_t *uv_args = uv_arguments(5, false);
 
     $append(uv_args->args, child);
     $append_func(uv_args->args, std_func);
     $append(uv_args->args, ipc_in(child));
-    go(stdio_handler, 1, uv_args);
-
-    return get_coro_err((routine_t *)child->handle->data);
-}
-
-int spawn_out(spawn_t child, stdout_cb std_func) {
-    uv_args_t *uv_args = uv_arguments(3, false);
-
-    $append(uv_args->args, child);
-    $append_func(uv_args->args, std_func);
     $append(uv_args->args, ipc_out(child));
-    go(stdio_handler, 1, uv_args);
-
-    return get_coro_err((routine_t *)child->handle->data);
-}
-
-int spawn_err(spawn_t child, stderr_cb std_func) {
-    uv_args_t *uv_args = uv_arguments(3, false);
-
-    $append(uv_args->args, child);
-    $append_func(uv_args->args, std_func);
     $append(uv_args->args, ipc_err(child));
     go(stdio_handler, 1, uv_args);
 
@@ -2350,16 +2344,12 @@ RAII_INLINE int spawn_pid(spawn_t child) {
     return child->process->pid;
 }
 
-RAII_INLINE uv_stream_t *ipc_in(spawn_t _in) {
-    return _in->handle->stdio[0].data.stream;
+RAII_INLINE bool is_undefined(void_t self) {
+    return self && !is_defined(self);
 }
 
-RAII_INLINE uv_stream_t *ipc_out(spawn_t out) {
-    return out->handle->stdio[1].data.stream;
-}
-
-RAII_INLINE uv_stream_t *ipc_err(spawn_t err) {
-    return err->handle->stdio[2].data.stream;
+RAII_INLINE bool is_defined(void_t self) {
+    return is_type(self, UV_CORO_ARGS);
 }
 
 RAII_INLINE bool is_process(void_t self) {
@@ -2414,7 +2404,7 @@ RAII_INLINE bool is_pipe(void_t self) {
         return false;
 
     void_t check = uv_handle_get_data(handler(self));
-    return is_type(check, UV_CORO_ARGS) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_PIPE;
+    return is_defined(check) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_PIPE;
 }
 
 RAII_INLINE bool is_tcp(void_t self) {
@@ -2422,7 +2412,7 @@ RAII_INLINE bool is_tcp(void_t self) {
         return false;
 
     void_t check = uv_handle_get_data(handler(self));
-    return is_type(check, UV_CORO_ARGS) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_TCP;
+    return is_defined(check) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_TCP;
 }
 
 RAII_INLINE bool is_udp(void_t self) {
@@ -2430,7 +2420,7 @@ RAII_INLINE bool is_udp(void_t self) {
         return false;
 
     void_t check = uv_handle_get_data(handler(self));
-    return is_type(check, UV_CORO_ARGS) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_UDP;
+    return is_defined(check) && ((uv_args_t *)check)->bind_type == RAII_SCHEME_UDP;
 }
 
 RAII_INLINE bool is_udp_packet(void_t self) {

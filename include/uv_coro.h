@@ -155,10 +155,7 @@ typedef void (*poll_cb)(int status, const uv_stat_t *prev, const uv_stat_t *curr
 typedef void (*stream_cb)(uv_stream_t *);
 typedef void (*packet_cb)(udp_packet_t *);
 typedef void (*spawn_cb)(int64_t status, int signal);
-typedef void (*stdio_cb)(string_t buf);
-typedef stdio_cb stdin_cb;
-typedef stdio_cb stdout_cb;
-typedef stdio_cb stderr_cb;
+typedef void (*spawn_handler_cb)(uv_stream_t *input, string output, uv_stream_t *error);
 
 typedef struct {
     uv_coro_types type;
@@ -318,15 +315,10 @@ C_API spawn_options_t *spawn_opts(string env, string_t cwd, int flags, uv_uid_t 
 C_API spawn_t spawn(string_t command, string_t args, spawn_options_t *options);
 C_API int spawn_atexit(spawn_t, spawn_cb exit_func);
 C_API bool is_spawning(spawn_t);
-C_API int spawn_in(spawn_t, stdin_cb std_func);
-C_API int spawn_out(spawn_t, stdout_cb std_func);
-C_API int spawn_err(spawn_t, stderr_cb std_func);
+C_API int spawn_handler(spawn_t child, spawn_handler_cb std_func);
 C_API int spawn_pid(spawn_t);
 C_API int spawn_signal(spawn_t, int sig);
 C_API int spawn_detach(spawn_t);
-C_API uv_stream_t *ipc_in(spawn_t);
-C_API uv_stream_t *ipc_out(spawn_t);
-C_API uv_stream_t *ipc_err(spawn_t);
 
 C_API string fs_readfile(string_t path);
 C_API int fs_writefile(string_t path, string_t text);
@@ -435,6 +427,8 @@ C_API uv_loop_t *uv_coro_loop(void);
 C_API string_t uv_coro_uname(void);
 C_API string_t uv_coro_hostname(void);
 
+C_API bool is_undefined(void_t);
+C_API bool is_defined(void_t);
 C_API bool is_tls(uv_stream_t *);
 C_API bool is_pipe(void_t);
 C_API bool is_tty(void_t);
