@@ -86,6 +86,7 @@ static uv_args_t *uv_arguments(int count, bool auto_free) {
     uv_args->args = params;
     uv_args->is_freeable = auto_free;
     uv_args->is_server = false;
+    uv_args->is_generator = false;
     uv_args->bind_type = RAII_SCHEME_TCP;
     uv_args->type = UV_CORO_ARGS;
     return uv_args;
@@ -1469,14 +1470,16 @@ static void_t stream_yield(params_t args) {
     uv_args_t *uv = args->object;
     uv_handle_t *stream = handler(uv->args[0].object);
     routine_t *co = coro_active();
-    int result = uv_read_start((uv_stream_t *)stream, alloc_cb, generator_cb);
+    int result = 0;
+    uv->context = co;
 
-    if (result) {
+    defer((func_t)uv_arguments_free, uv);
+    uv_handle_set_data(stream, (void_t)uv);
+
+    if (result = uv_read_start(streamer(stream), alloc_cb, generator_cb)) {
         return uv_coro_abort(nullptr, result, co);
     }
 
-    uv->context = co;
-    uv_handle_set_data(stream, (void_t)uv);
     while (!coro_terminated(co)) {
         if (!is_empty(uv->bufs.base) && simd_strlen(uv->bufs.base) > 0)
             yielding(uv->bufs.base);
@@ -1484,7 +1487,7 @@ static void_t stream_yield(params_t args) {
             yield();
     }
 
-    uv_arguments_free(uv);
+    uv_read_stop(streamer(stream));
     return 0;
 }
 
@@ -1494,13 +1497,16 @@ string stream_get(uv_stream_t *handle) {
 
     generator_t gen = nullptr;
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_type(uv_args, UV_CORO_ARGS) && $size(uv_args->args) == 2
-        && is_type(uv_args->args[1].object, RAII_YIELD)) {
+    if (is_type(uv_args, UV_CORO_ARGS) && uv_args->is_generator) {
         uv_args->args[0].object = handle;
         gen = (generator_t)uv_args->args[1].object;
         coro_context_set(uv_args->context, coro_active());
     } else {
+        if (uv_args && uv_args->context && coro_terminated(uv_args->context))
+            return nullptr;
+
         uv_args = uv_arguments(2, false);
+        uv_args->is_generator = true;
         $append(uv_args->args, handle);
         gen = generator(stream_yield, 1, uv_args);
         $append(uv_args->args, gen);
@@ -2138,17 +2144,9 @@ static void_t stdio_handler(params_t uv_args) {
     stdio_cb std = (stdio_cb)uv->args[1].func;
     uv_stream_t *io = uv->args[2].object;
     string data = nullptr;
+    uv_arguments_free(uv);
 
-    uv->args[0].object = io;
-    uv->bind_type = UV_CORO_SPAWN;
-    uv->req_type = UV_CORO_SPAWN;
-    defer((func_t)uv_arguments_free, uv);
-    uv_handle_set_data(handler(io), (void_t)uv);
-
-    while (is_spawning(child)) {
-        if (is_empty(data = stream_read(io)))
-            break;
-
+    while ((data = stream_get(io)) && !coro_terminated(child->context)) {
         std(data);
     }
 
