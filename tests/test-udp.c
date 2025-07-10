@@ -14,7 +14,6 @@ void_t worker_client(params_t args) {
     ASSERT_WORKER(is_udp_packet(packets = udp_recv(client)));
     ASSERT_WORKER(is_str_eq("world", udp_get_message(packets)));
 
-    sleepfor(600);
     return args[2].char_ptr;
 }
 
@@ -22,7 +21,6 @@ void_t worker_connected(udp_packet_t *client) {
     ASSERT_WORKER(is_str_eq("hello", udp_get_message(client)));
     ASSERT_WORKER((udp_send_packet(client, "world") == 0));
 
-    sleepfor(600);
     return 0;
 }
 

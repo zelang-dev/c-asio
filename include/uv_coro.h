@@ -215,7 +215,10 @@ typedef struct uv_args_s {
     evt_ctx_t ctx;
     string buffer;
     uv_buf_t bufs;
-    uv_fs_t req;
+    uv_fs_t fs_req;
+    uv_connect_t connect_req;
+    uv_shutdown_t shutdown_req;
+    udp_packet_t *packet_req;
     uv_stat_t stat[1];
     uv_statfs_t statfs[1];
     scandir_t dir[1];
