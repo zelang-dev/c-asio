@@ -13,7 +13,7 @@ TEST(stream_read) {
     ASSERT_TRUE(is_pipepair(pair));
     ASSERT_EQ(0, stream_write(pair->writer, "ABCDE"));
     ASSERT_FALSE(result_is_ready(res));
-    ASSERT_STR("ABCDE", stream_read(pair->reader));
+    ASSERT_STR("ABCDE", stream_read_once(pair->reader));
     ASSERT_FALSE(result_is_ready(res));
     while (!result_is_ready(res))
         yield();

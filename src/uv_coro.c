@@ -29,6 +29,8 @@ static uv_tcp_t *tls_tcp_create(void_t extra);
 static void_t fs_init(params_t);
 static void_t uv_init(params_t);
 static value_t uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_request);
+static string stream_get(uv_stream_t *handle);
+static udp_packet_t *udp_get(uv_udp_t *handle);
 static void udp_packet_free(udp_packet_t *handle);
 static void dummy_free(void_t ptr) {}
 
@@ -89,6 +91,7 @@ static uv_args_t *uv_arguments(int count, bool auto_free) {
     uv_args->is_freeable = auto_free;
     uv_args->is_server = false;
     uv_args->is_generator = false;
+    uv_args->is_once = false;
     uv_args->bind_type = RAII_SCHEME_TCP;
     uv_args->type = UV_CORO_ARGS;
     return uv_args;
@@ -273,15 +276,17 @@ static value_t uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_req
     return coro_await(uv_init, 1, uv_args);
 }
 
-static void uv_catch_error(void_t uv) {
-    routine_t *co = ((uv_args_t *)uv)->context;
+static void uv_catch_error(uv_args_t *uv) {
+    routine_t *co = uv->context;
     string_t text = err_message();
     if (!is_empty((void_t)text) && raii_is_caught(get_coro_scope(co), text)) {
         coro_halt_set(co);
         coro_await_erred(co, get_coro_err(co));
     }
 
-    uv_arguments_free(uv_server_data());
+    if (!uv->is_freeable)
+        uv_arguments_free(uv);
+
     interrupt_data_set(nullptr);
 }
 
@@ -462,7 +467,6 @@ static void write_cb(uv_write_t *req, int status) {
     }
 
     coro_await_finish(co, nullptr, status, true);
-    RAII_FREE(req);
 }
 
 static void tls_write_cb(uv_tls_t *tls, int status) {
@@ -492,8 +496,7 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     }
 
     coro_await_finish(co, ((nread > 0) ? buf->base : nullptr), nread, false);
-    if (nread > 0)
-        RAII_FREE(buf->base);
+    RAII_FREE(buf->base);
 }
 
 static void tls_read_cb(uv_tls_t *strm, ssize_t nread, const uv_buf_t *buf) {
@@ -752,13 +755,12 @@ static void_t uv_init(params_t uv_args) {
         uv_req_t *req;
         switch (uv->req_type) {
             case UV_WRITE:
+                req = (uv_req_t *)&uv->write_req;
                 if (uv->bind_type == RAII_SCHEME_TLS) {
                     ((uv_tls_t *)stream)->uv_args = uv;
                     result = uv_tls_write((uv_tls_t *)stream, &uv->bufs, tls_write_cb);
                 } else {
-                    req = try_calloc(1, sizeof(uv_write_t));
-                    if (result = uv_write((uv_write_t *)req, streamer(stream), &uv->bufs, 1, write_cb))
-                        RAII_FREE(req);
+                    result = uv_write((uv_write_t *)req, streamer(stream), &uv->bufs, 1, write_cb);
                 }
                 break;
             case UV_CONNECT:
@@ -1330,10 +1332,7 @@ static void_t stream_client(params_t args) {
     uv_stream_t *client = (uv_stream_t *)args[0].object;
     stream_cb handlerFunc = (stream_cb)args[1].func;
     raii_type type = ((uv_args_t *)uv_handle_get_data(handler(client)))->bind_type;
-    //uv_args_t *uv_args = uv_arguments(1, true);
 
-    //$append(uv_args->args, client);
-    //uv_args->bind_type = type;
     uv_handle_set_data(handler(client), nullptr);
     if (type == RAII_SCHEME_TLS)
         defer(tls_close_free, client);
@@ -1341,8 +1340,6 @@ static void_t stream_client(params_t args) {
         defer(uv_close_free, client);
 
     handlerFunc(client);
-    yield();
-
     return 0;
 }
 
@@ -1369,7 +1366,7 @@ int stream_write(uv_stream_t *handle, string_t text) {
     return uv_start(uv_args, UV_WRITE, 1, true).integer;
 }
 
-string stream_read(uv_stream_t *handle) {
+RAII_INLINE string stream_read_wait(uv_stream_t *handle) {
     if (is_empty(handle))
         return nullptr;
 
@@ -1385,48 +1382,69 @@ string stream_read(uv_stream_t *handle) {
     return uv_start(uv_args, UV_STREAM, 1, false).char_ptr;
 }
 
+RAII_INLINE string stream_read_once(uv_stream_t *handle) {
+    uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
+    if (!is_defined(uv_args))
+        throw(logic_error);
+
+    uv_args->is_once = true;
+    return stream_get(handle);
+}
+
+RAII_INLINE string stream_read(uv_stream_t *handle) {
+    return stream_get(handle);
+}
+
 static void read_generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(stream));
-    routine_t *co = uv->context;
+    routine_t *co = uv->context, *coro = get_coro_context(co);
 
     if (nread < 0) {
         if (nread != UV_EOF)
             uv_log_error(nread);
 
         uv_read_stop(stream);
-        RAII_FREE(buf->base);
-        coro_await_exit(co, nullptr, nread, (nread != UV_EOF));
-    } else {
-        if (nread > 0)
-            uv->bufs.base = buf->base;
-        else
-            uv->bufs.base = nullptr;
-
-        coro_context_set(co, co);
-        coro_await_upgrade(co, ((nread > 0) ? buf->base : nullptr), nread, false, false, true);
-        if (nread > 0) {
+        if (buf->base)
             RAII_FREE(buf->base);
-            uv->bufs.base = nullptr;
+
+        coro_await_exit(co, nullptr, nread, (nread != UV_EOF));
+    } else if (nread == 0) {
+        uv->bufs.base = nullptr;
+        if (co == coro) {
+            coro_context_set(co, coro_running());
+            coro_await_exit(co, nullptr, nread, false);
+        }
+    } else {
+        uv->bufs.base = buf->base;
+        uv->bufs.len = buf->len;
+        coro_context_set(co, co);
+        coro_await_upgrade(co, buf->base, nread, false, false, true);
+        RAII_FREE(buf->base);
+        uv->bufs.base = nullptr;
+        if (is_empty(coro) && uv->is_once) {
+            coro_await_exit(co, nullptr, nread, false);
         }
     }
 }
 
 static void_t stream_yield(params_t args) {
     uv_args_t *uv = args->object;
-    uv_handle_t *stream = handler(uv->args[0].object);
+    uv_handle_t *stream = uv->args[0].object;
     routine_t *co = coro_active();
     int result = 0;
     uv->context = co;
 
-    defer((func_t)uv_arguments_free, uv);
+    if (!uv->is_freeable)
+        defer((func_t)uv_arguments_free, uv);
     uv_handle_set_data(stream, (void_t)uv);
 
     if (result = uv_read_start(streamer(stream), alloc_cb, read_generator_cb)) {
         return uv_coro_abort(nullptr, result, co);
     }
 
+    yield();
     while (!coro_terminated(co)) {
-        if (!is_empty(uv->bufs.base) && simd_strlen(uv->bufs.base) > 0)
+        if (!is_empty(uv->bufs.base) && uv->bufs.len > 0)
             yielding(uv->bufs.base);
         else
             yield();
@@ -1436,25 +1454,30 @@ static void_t stream_yield(params_t args) {
     return 0;
 }
 
-string stream_get(uv_stream_t *handle) {
+static string stream_get(uv_stream_t *handle) {
     if (is_empty(handle))
         return nullptr;
 
+    bool has_args = false;
     generator_t gen = nullptr;
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
     if (is_defined(uv_args) && uv_args->is_generator) {
         uv_args->args[0].object = handle;
-        gen = (generator_t)uv_args->args[1].object;
+        gen = get_coro_generator(uv_args->context);
         coro_context_set(uv_args->context, coro_active());
     } else {
-        if (is_undefined(uv_args))
+        if (is_defined(uv_args)) {
+            uv_args->args[0].object = handle;
+        } else if (is_empty(uv_args)) {
+            uv_args = uv_arguments(1, false);
+            uv_args->bind_type = RAII_NO_INSTANCE;
+            $append(uv_args->args, handle);
+        } else if (is_undefined(uv_args)) {
             return nullptr;
+        }
 
-        uv_args = uv_arguments(2, false);
         uv_args->is_generator = true;
-        $append(uv_args->args, handle);
         gen = generator(stream_yield, 1, uv_args);
-        $append(uv_args->args, gen);
         uv_handle_set_data(handler(handle), (void_t)uv_args);
     }
 
@@ -1587,7 +1610,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
     size_t len = sizeof(name);
 
     uv_args_t *uv_args = uv_arguments(5, false);
-    defer_recover(uv_catch_error, uv_args);
+    defer_recover((func_t)uv_catch_error, uv_args);
     if (scheme == RAII_SCHEME_PIPE)
         addr_set = str_concat(2, SYS_PIPE, address);
     else
@@ -1743,7 +1766,8 @@ static void_t udp_yield(params_t args) {;
     uv->context = co;
     uv->packet_req = nullptr;
 
-    defer((func_t)uv_arguments_free, uv);
+    if (!uv->is_freeable)
+        defer((func_t)uv_arguments_free, uv);
     uv_handle_set_data(handler(handle), (void_t)uv);
 
     if (result = uv_udp_recv_start(handle, alloc_cb, udp_generator_cb)) {
@@ -2180,7 +2204,7 @@ static RAII_INLINE uv_stream_t *ipc_out(spawn_t out) {
     return out->handle->stdio[1].data.stream;
 }
 
-static RAII_INLINE uv_stream_t *ipc_err(spawn_t err) {
+static RAII_INLINE uv_stream_t *ipc_duplex(spawn_t err) {
     return err->handle->stdio[2].data.stream;
 }
 
@@ -2221,12 +2245,12 @@ static void_t stdio_handler(params_t uv_args) {
     spawn_handler_cb std = (spawn_handler_cb)uv->args[1].func;
     uv_stream_t *io_in = uv->args[2].object;
     uv_stream_t *io_out = uv->args[3].object;
-    uv_stream_t *io_err = uv->args[4].object;
+    uv_stream_t *io_duplex = uv->args[4].object;
     string data = nullptr;
     uv_arguments_free(uv);
 
     while ((data = stream_get(io_out)) && !coro_terminated(child->context)) {
-        std(io_in, data, io_err);
+        std(io_in, data, io_duplex);
     }
 
     uv_read_stop(io_out);
@@ -2283,6 +2307,10 @@ RAII_INLINE uv_stdio_container_t *stdio_stream(void_t handle, int flags) {
     stdio->data.stream = (uv_stream_t *)handle;
 
     return stdio;
+}
+
+RAII_INLINE uv_stdio_container_t *stdio_pipeduplex(void) {
+    return stdio_stream(pipe_create_ex(true, false), UV_CREATE_PIPE | UV_READABLE_PIPE | UV_WRITABLE_PIPE);
 }
 
 RAII_INLINE uv_stdio_container_t *stdio_piperead(void) {
@@ -2399,7 +2427,7 @@ int spawn_handler(spawn_t child, spawn_handler_cb std_func) {
     $append_func(uv_args->args, std_func);
     $append(uv_args->args, ipc_in(child));
     $append(uv_args->args, ipc_out(child));
-    $append(uv_args->args, ipc_err(child));
+    $append(uv_args->args, ipc_duplex(child));
     go(stdio_handler, 1, uv_args);
 
     return get_coro_err((routine_t *)child->handle->data);

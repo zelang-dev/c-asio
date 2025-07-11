@@ -155,7 +155,7 @@ typedef void (*poll_cb)(int status, const uv_stat_t *prev, const uv_stat_t *curr
 typedef void (*stream_cb)(uv_stream_t *);
 typedef void (*packet_cb)(udp_packet_t *);
 typedef void (*spawn_cb)(int64_t status, int signal);
-typedef void (*spawn_handler_cb)(uv_stream_t *input, string output, uv_stream_t *error);
+typedef void (*spawn_handler_cb)(uv_stream_t *input, string output, uv_stream_t *duplex);
 
 typedef struct {
     uv_coro_types type;
@@ -201,6 +201,7 @@ typedef struct uv_args_s {
     bool is_freeable;
     bool is_server;
     bool is_generator;
+    bool is_once;
     uv_fs_type fs_type;
     uv_req_type req_type;
     uv_handle_type handle_type;
@@ -216,6 +217,7 @@ typedef struct uv_args_s {
     string buffer;
     uv_buf_t bufs;
     uv_fs_t fs_req;
+    uv_write_t write_req;
     uv_connect_t connect_req;
     uv_shutdown_t shutdown_req;
     udp_packet_t *packet_req;
@@ -260,6 +262,14 @@ C_API uv_stdio_container_t *stdio_fd(int fd, int flags);
 * -`UV_OVERLAPPED_PIPE`
 */
 C_API uv_stdio_container_t *stdio_stream(void_t handle, int flags);
+
+/*
+Stdio container `pipe` ~pointer~ with `uv_stdio_flags` transmitted to the child process.
+* -`UV_CREATE_PIPE`
+* -`UV_READABLE_PIPE`
+* -`UV_WRITABLE_PIPE`
+*/
+C_API uv_stdio_container_t *stdio_pipeduplex(void);
 
 /*
 Stdio container `pipe` ~pointer~ with `uv_stdio_flags` transmitted to the child process.
@@ -390,6 +400,8 @@ C_API tty_out_t *tty_out(void);
 C_API tty_err_t *tty_err(void);
 
 C_API string stream_read(uv_stream_t *);
+C_API string stream_read_once(uv_stream_t *);
+C_API string stream_read_wait(uv_stream_t *);
 C_API int stream_write(uv_stream_t *, string_t text);
 C_API int stream_shutdown(uv_stream_t *);
 
