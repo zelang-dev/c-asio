@@ -1,5 +1,13 @@
 #include "uv_coro.h"
 
+typedef struct uv_this_s {
+    void_t data;
+    ptrdiff_t diff;
+    uv_handle_t *handle;
+    uv_req_t *req;
+    char charaters[1024];
+} uv_this_t;
+
 struct udp_packet_s {
     uv_coro_types type;
     unsigned int flags;
@@ -204,14 +212,25 @@ static void fs_event_cleanup(uv_args_t *uv_args, routine_t *co, int status) {
 
 static void fs_event_cb(uv_fs_event_t *handle, string_t filename, int events, int status) {
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    routine_t *co = (routine_t *)uv_args->context;
+    routine_t *co = (routine_t *)uv_args->context, *coro = coro_active();
     event_cb watchfunc = (event_cb)uv_args->args[2].func;
+    void_t data = nullptr;
+    uv_this_t this = nil;
+    this.diff = sizeof(this.charaters) - 1;
+    this.handle = handler(handle);
 
     if (status < 0) {
         uv_fs_event_stop(handle);
         fs_event_cleanup(uv_args, co, status);
     } else if ((events & UV_RENAME) || (events & UV_CHANGE)) {
+        data = get_coro_data(coro);
+        this.data = data;
+        // Does not handle error if path is longer than 1023.
+        uv_fs_event_getpath(handle, this.charaters, &this.diff);
+        coro_data_set(coro, &this);
         watchfunc(filename, events, status);
+        if (data == this.data)
+            coro_data_set(coro, data);
     }
 }
 
@@ -232,14 +251,25 @@ static RAII_INLINE void_t coro_fs_event(params_t args) {
 
 static void fs_poll_cb(uv_fs_poll_t *handle, int status, const uv_stat_t *prev, const uv_stat_t *curr) {
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    routine_t *co = (routine_t *)uv_args->context;
+    routine_t *co = (routine_t *)uv_args->context, *coro = coro_active();
     poll_cb pollerfunc = (poll_cb)uv_args->args[2].func;
+    void_t data = nullptr;
+    uv_this_t this = nil;
+    this.diff = sizeof(this.charaters) - 1;
+    this.handle = handler(handle);
 
     if (status < 0) {
         uv_fs_poll_stop(handle);
         fs_event_cleanup(uv_args, co, status);
     } else {
+        data = get_coro_data(coro);
+        this.data = data;
+        // Does not handle error if path is longer than 1023.
+        uv_fs_poll_getpath(handle, this.charaters, &this.diff);
+        coro_data_set(coro, &this);
         pollerfunc(status, prev, curr);
+        if (data == this.data)
+            coro_data_set(coro, data);
     }
 }
 
@@ -1232,6 +1262,24 @@ int fs_writefile(string_t path, string_t text) {
     return coro_err_code();
 }
 
+RAII_INLINE string_t fs_poll_path(void) {
+    return fs_watch_path();
+}
+
+RAII_INLINE bool fs_poll_stop(void) {
+    void_t data = get_coro_data(coro_active());
+    bool status = false;
+    if (!is_empty(data)) {
+        uv_this_t *this = (uv_this_t *)data;
+        uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(this->handle);
+        status = uv_fs_poll_stop((uv_fs_poll_t *)this->handle);
+        coro_data_set(coro_active(), this->data);
+        fs_event_cleanup(uv_args, uv_args->context, (status == 0 ? UV_ECANCELED : status));
+    }
+
+    return status == 0;
+}
+
 void fs_poll(string_t path, poll_cb pollfunc, int interval) {
     uv_fs_poll_t *poll = fs_poll_create();
     if (is_empty(poll))
@@ -1239,10 +1287,33 @@ void fs_poll(string_t path, poll_cb pollfunc, int interval) {
 
     uv_args_t *uv_args = uv_arguments(4, false);
     $append(uv_args->args, poll);
-    $append_string(uv_args->args, str_dup(path));
+    $append_string(uv_args->args, path);
     $append_func(uv_args->args, pollfunc);
     $append_signed(uv_args->args, interval);
     coro_launch(coro_fs_poll, 1, uv_args);
+}
+
+RAII_INLINE string_t fs_watch_path(void) {
+    void_t data = get_coro_data(coro_active());
+    if (is_empty(data))
+        return "";
+
+    uv_this_t *this = (uv_this_t *)data;
+    return (string_t)this->charaters;
+}
+
+RAII_INLINE bool fs_watch_stop(void) {
+    void_t data = get_coro_data(coro_active());
+    bool status = false;
+    if (!is_empty(data)) {
+        uv_this_t *this = (uv_this_t *)data;
+        uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(this->handle);
+        status = uv_fs_event_stop((uv_fs_event_t *)this->handle);
+        coro_data_set(coro_active(), this->data);
+        fs_event_cleanup(uv_args, uv_args->context, (status == 0 ? UV_ECANCELED : status));
+    }
+
+    return status == 0;
 }
 
 void fs_watch(string_t path, event_cb watchfunc) {
@@ -1252,7 +1323,7 @@ void fs_watch(string_t path, event_cb watchfunc) {
 
     uv_args_t *uv_args = uv_arguments(3, false);
     $append(uv_args->args, event);
-    $append_string(uv_args->args, str_dup(path));
+    $append_string(uv_args->args, path);
     $append_func(uv_args->args, watchfunc);
     coro_launch(coro_fs_event, 1, uv_args);
 }
@@ -2555,6 +2626,7 @@ RAII_INLINE uv_loop_t *uv_coro_loop(void) {
 }
 
 static void uv_coro_free(routine_t *coro, routine_t *co, uv_args_t *uv_args) {
+    hash_free(get_coro_waitgroup(coro));
     raii_deferred_free(get_coro_scope(coro));
     RAII_FREE(coro);
 
@@ -2578,7 +2650,9 @@ static void uv_coro_shutdown(void_t t) {
     if (is_empty(t)) {
         uv_loop_t *loop = interrupt_handle();
         i32 num_of = interrupt_code();
+        bool has_code = false;
         if (num_of) {
+            has_code = true;
             uv_handle_type fs_type;
             uv_args_t *uv_args;
             routine_t *coro, *co;
@@ -2604,7 +2678,7 @@ static void uv_coro_shutdown(void_t t) {
         }
 
         if (loop) {
-            if (uv_loop_alive(loop)) {
+            if (uv_loop_alive(loop) || has_code) {
                 uv_walk(loop, (uv_walk_cb)uv_close_free, nullptr);
                 uv_run(loop, UV_RUN_DEFAULT);
             }

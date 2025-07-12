@@ -378,7 +378,12 @@ C_API uv_file fs_mkstemp(string tpl);
 C_API string fs_mkdtemp(string tpl);
 
 C_API void fs_poll(string_t path, poll_cb pollfunc, int interval);
+C_API string_t fs_poll_path(void);
+C_API bool fs_poll_stop(void);
+
 C_API void fs_watch(string_t, event_cb watchfunc);
+C_API string_t fs_watch_path(void);
+C_API bool fs_watch_stop(void);
 
 C_API dnsinfo_t *get_addrinfo(string_t address, string_t service, u32 numhints_pair, ...);
 C_API addrinfo_t *addrinfo_next(dnsinfo_t *);

@@ -1,15 +1,20 @@
 #include "assertions.h"
 
 string_t watch_path = "watchdir";
+static int watch_count = 0;
 
 void_t worker_misc(params_t args) {
     ASSERT_WORKER(($size(args) > 1));
     sleepfor(args[0].u_int);
     ASSERT_WORKER(is_str_eq("event", args[1].char_ptr));
+    yield();
     return "fs_watch";
 }
 
 int watch_handler(string_t filename, int events, int status) {
+    ASSERT_STR("watchdir", fs_watch_path());
+    watch_count++;
+
     if (events & UV_RENAME) {
         ASSERT_TRUE((is_str_eq("file1.txt", filename) || is_str_eq("watchdir", filename) || is_str_empty(filename)));
     }
@@ -40,6 +45,7 @@ TEST(fs_watch) {
 
     ASSERT_TRUE(result_is_ready(res));
     ASSERT_STR(result_for(res).char_ptr, "fs_watch");
+    ASSERT_EQ(2, watch_count);
 
     return 0;
 }
