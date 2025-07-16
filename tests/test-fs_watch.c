@@ -5,7 +5,7 @@ static int watch_count = 0;
 
 void_t worker_misc(params_t args) {
     ASSERT_WORKER(($size(args) > 1));
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_eq("event", args[1].char_ptr));
     yield();
     return "fs_watch";
@@ -38,7 +38,7 @@ TEST(fs_watch) {
     ASSERT_EQ(5, fs_writefile(filepath, "hello"));
     ASSERT_EQ(0, fs_unlink(filepath));
 
-    sleepfor(10);
+    delay(10);
     ASSERT_EQ(0, fs_rmdir(watch_path));
     while (!result_is_ready(res))
         yield();

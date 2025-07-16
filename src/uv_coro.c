@@ -179,10 +179,10 @@ static void uv_coro_closer(uv_args_t *uv) {
 
 static void timer_cb(uv_timer_t *handle) {
     uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(handle));
+    uint64_t old = uv->args[2].max_size;
     routine_t *co = uv->context;
     uv_timer_stop(handle);
-    coro_halt_set(get_coro_context(get_coro_context(co)));
-    coro_await_finish(co, nullptr, 0, false);
+    coro_await_finish(co, nullptr, (uv_hrtime() - old), true);
 }
 
 static void fs_event_cleanup(uv_args_t *uv_args, routine_t *co, int status) {
@@ -446,34 +446,34 @@ static void getnameinfo_cb(uv_getnameinfo_t *req, int status, string_t hostname,
         raii_deferred(get_coro_scope(get_coro_context(co)), (func_t)uv_coro_closer, uv);
     }
 
-    coro_await_finish(co, (status ? nullptr : info), status, false);
+    coro_await_finish(co, info, status, false);
 }
 
 static void getaddrinfo_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
     uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(req));
     routine_t *co = uv->context;
     addrinfo_t *next = nullptr;
+    dnsinfo_t *dns = uv->dns;
     int count = 0;
 
     uv->args[0].object = res;
-    RAII_FREE(req);
     if (status < 0) {
-        uv->dns->addr = nullptr;
-        uv->dns->type = RAII_ERR;
+        dns->addr = nullptr;
+        dns->type = RAII_ERR;
         uv_coro_abort(nullptr, status, co);
         uv_coro_closer(uv);
     } else {
         for (next = res->ai_next; next != nullptr; next = next->ai_next)
             count++;
 
-        uv->dns->addr = res;
-        uv->dns->count = count;
-        uv->dns->type = UV_CORO_DNS;
-        addrinfo_next(uv->dns);
+        dns->addr = res;
+        dns->count = count;
+        dns->type = UV_CORO_DNS;
+        addrinfo_next(dns);
         raii_deferred(get_coro_scope(get_coro_context(co)), (func_t)uv_coro_closer, uv);
     }
 
-    coro_await_finish(co, (status ? nullptr : uv->dns), status, false);
+    coro_await_finish(co, dns, status, false);
 }
 
 static void shutdown_cb(uv_shutdown_t *req, int status) {
@@ -526,7 +526,8 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     }
 
     coro_await_finish(co, ((nread > 0) ? buf->base : nullptr), nread, false);
-    RAII_FREE(buf->base);
+    if (nread > 0)
+        RAII_FREE(buf->base);
 }
 
 static void tls_read_cb(uv_tls_t *strm, ssize_t nread, const uv_buf_t *buf) {
@@ -823,13 +824,12 @@ static void_t uv_init(params_t uv_args) {
                 break;
             case UV_WORK:
             case UV_GETADDRINFO:
-                req = try_calloc(1, sizeof(uv_getaddrinfo_t));
+                req = (uv_req_t *)&uv->addinfo_req;
                 result = uv_getaddrinfo(uv_coro_loop(), (uv_getaddrinfo_t *)req,
                                         getaddrinfo_cb, args[0].char_ptr, args[1].char_ptr,
                                         (uv->n_args > 2 ? (const addrinfo_t *)args[2].object : nullptr));
                 if (result) {
-                    uv->args[0].object = req;
-                    uv_coro_closer(uv);
+                    uv_arguments_free(uv);
                 }
                 break;
             case UV_GETNAMEINFO:
@@ -1358,7 +1358,7 @@ dnsinfo_t *get_addrinfo(string_t address, string_t service, u32 numhints_pair, .
 }
 
 addrinfo_t *addrinfo_next(dnsinfo_t *dns) {
-    if (is_type(dns, UV_CORO_DNS) && !is_empty(dns->addr)) {
+    if (is_addrinfo(dns) && !is_empty(dns->addr)) {
         addrinfo_t *dir = dns->addr;
         int ip = RAII_ERR;
         *dns->original = *dns->addr;
@@ -1379,7 +1379,7 @@ addrinfo_t *addrinfo_next(dnsinfo_t *dns) {
         }
 
         dns->addr = dir->ai_next;
-        return  dns->addr;
+        return dns->addr;
     }
 
     return nullptr;
@@ -1389,7 +1389,7 @@ nameinfo_t *get_nameinfo(string_t addr, int port, int flags) {
     uv_args_t *uv_args = uv_arguments(2, false);
     void_t addr_set = uv_coro_sockaddr(addr, port, uv_args->dns->in6, uv_args->dns->in4);
 
-    if (!addr_set) {
+    if (addr_set) {
         $append(uv_args->args, addr_set);
         $append_signed(uv_args->args, flags);
         return (nameinfo_t *)uv_start(uv_args, UV_GETNAMEINFO, 2, true).object;
@@ -1411,6 +1411,7 @@ static void_t stream_client(params_t args) {
         defer(uv_close_free, client);
 
     handlerFunc(client);
+
     return 0;
 }
 
@@ -2591,6 +2592,14 @@ RAII_INLINE bool is_udp_packet(void_t self) {
     return is_type(self, UV_CORO_UDP);
 }
 
+RAII_INLINE bool is_nameinfo(void_t self) {
+    return is_type(self, UV_CORO_NAME);
+}
+
+RAII_INLINE bool is_addrinfo(void_t self) {
+    return is_type(self, UV_CORO_DNS);
+}
+
 string_t uv_coro_uname(void) {
     if (is_str_empty((string_t)uv_coro_powered_by)) {
         char scrape[SCRAPE_SIZE];
@@ -2701,23 +2710,23 @@ static void uv_create_loop(void) {
     interrupt_handle_set(handle);
 }
 
-static u32 uv_coro_sleep(u32 ms) {
+u32 delay(u32 ms) {
     uv_timer_t *timer = time_create();
     if (is_empty(timer))
         return RAII_ERR;
 
-    uv_args_t *uv_args = uv_arguments(2, false);
+    uv_args_t *uv_args = uv_arguments(3, false);
     $append(uv_args->args, timer);
     $append_unsigned(uv_args->args, ms);
-    coro_timer_set(coro_active(), (void_t)timer);
-    return uv_start(uv_args, UV_TIMER, 2, false).u_int;
+    $append_unsigned(uv_args->args, uv_hrtime());
+    coro_flag_set(coro_active());
+    return uv_start(uv_args, UV_TIMER, 3, false).u_int;
 }
 
 main(int argc, char **argv) {
     uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
     RAII_INFO("%s, %s\n\n", uv_coro_uname(), uv_coro_hostname());
-    coro_interrupt_setup((call_interrupter_t)uv_run, uv_create_loop,
-                         uv_coro_shutdown, (call_timer_t)uv_coro_sleep, nullptr);
+    coro_interrupt_setup((call_interrupter_t)uv_run, uv_create_loop, uv_coro_shutdown);
     coro_stacksize_set(Kb(64));
     return coro_start((coro_sys_func)uv_main, argc, argv, 0);
 }

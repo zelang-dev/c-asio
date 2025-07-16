@@ -4,7 +4,7 @@ void_t worker_client(params_t args) {
     uv_stream_t *server = nullptr;
     ASSERT_WORKER(($size(args) == 3));
 
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_eq("worker_client", args[1].char_ptr));
 
     ASSERT_WORKER(is_tcp(server = stream_connect("http://127.0.0.1:8090")));

@@ -220,6 +220,7 @@ typedef struct uv_args_s {
     uv_write_t write_req;
     uv_connect_t connect_req;
     uv_shutdown_t shutdown_req;
+    uv_getaddrinfo_t addinfo_req;
     udp_packet_t *packet_req;
     uv_stat_t stat[1];
     uv_statfs_t statfs[1];
@@ -464,10 +465,13 @@ C_API bool is_pipe_file(void_t);
 C_API bool is_tty_in(void_t);
 C_API bool is_tty_out(void_t);
 C_API bool is_tty_err(void_t);
+C_API bool is_addrinfo(void_t);
+C_API bool is_nameinfo(void_t);
 
 /* This library provides its own ~main~,
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
+C_API u32 delay(u32 ms);
 
 #ifdef __cplusplus
 }

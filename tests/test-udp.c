@@ -5,11 +5,11 @@ void_t worker_client(params_t args) {
     udp_packet_t *packets = nullptr;
     ASSERT_WORKER(($size(args) == 3));
 
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_eq("worker_client", args[1].char_ptr));
 
     ASSERT_WORKER(is_udp(client = udp_bind("127.0.0.1:7777", 0)));
-    sleepfor(100);
+    delay(100);
     ASSERT_WORKER((udp_send(client, "hello", "udp://0.0.0.0:9999") == 0));
     ASSERT_WORKER(is_udp_packet(packets = udp_recv(client)));
     ASSERT_WORKER(is_str_eq("world", udp_get_message(packets)));
@@ -21,6 +21,7 @@ void_t worker_connected(udp_packet_t *client) {
     ASSERT_WORKER(is_str_eq("hello", udp_get_message(client)));
     ASSERT_WORKER((udp_send_packet(client, "world") == 0));
 
+    delay(100);
     return 0;
 }
 

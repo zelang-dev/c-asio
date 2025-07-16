@@ -27,5 +27,5 @@ int uv_main(int argc, char **argv) {
         fs_watch(argv[argc], run_command);
     }
 
-    return ((int)sleepfor(100000) < 0 ? coro_err_code(): 0);
+    return ((int)delay(100000) < 0 ? coro_err_code(): 0);
 }

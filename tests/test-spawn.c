@@ -4,7 +4,7 @@ static int output_count = 0;
 
 void_t worker_misc(params_t args) {
     ASSERT_WORKER(($size(args) == 3));
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_eq("uv_spawn", args[1].char_ptr));
     return args[2].char_ptr;
 }

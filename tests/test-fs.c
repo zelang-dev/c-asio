@@ -11,7 +11,7 @@ string_t watch_path = "watchdir";
 
 void_t worker(params_t args) {
     ASSERT_WORKER(is_str_eq("hello world", args->char_ptr));
-    sleepfor(600);
+    delay(600);
     return "done";
 }
 
@@ -36,7 +36,7 @@ TEST(fs_close) {
 
 void_t worker2(params_t args) {
     ASSERT_WORKER(($size(args) == 0));
-    sleepfor(600);
+    delay(600);
     return "hello world";
 }
 
@@ -61,7 +61,7 @@ TEST(fs_write_read) {
 
 void_t worker_misc(params_t args) {
     ASSERT_WORKER(($size(args) > 1));
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_in("mkdir,rmdir,rename,writefile,scandir,unlink,event", args[1].char_ptr));
     return args[1].char_ptr;
 }
@@ -83,7 +83,7 @@ TEST(fs_mkdir) {
 TEST(fs_rename) {
     rid_t res = go(worker_misc, 2, 600, "rename");
     ASSERT_EQ(0, fs_rename(dir_path, ren_path));
-    sleepfor(20);
+    delay(20);
     ASSERT_EQ(0, fs_rmdir(ren_path));
     while (!result_is_ready(res))
         yield();

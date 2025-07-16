@@ -4,22 +4,22 @@ string gai = "dns.google";
 string gni = "8.8.8.8";
 
 void_t worker_misc(params_t args) {
-    ASSERT_WORKER(($size(args) > 1));
-    sleepfor(args[0].u_int);
+    ASSERT_WORKER(($size(args) > 2));
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_in("addrinfo, nameinfo", args[1].char_ptr));
-    return args[1].char_ptr;
+    return args[2].char_ptr;
 }
 
 TEST(get_addrinfo) {
-    dnsinfo_t *dns;
-    rid_t res = go(worker_misc, 2, 600, "addrinfo");
-    ASSERT_TRUE(is_type(dns = get_addrinfo(gai, "http", 1, kv(ai_flags, AI_CANONNAME | AI_PASSIVE | AF_INET)), UV_CORO_DNS));
+    dnsinfo_t *dns = nullptr;
+    rid_t res = go(worker_misc, 3, 1000, "addrinfo", "finish");
+    ASSERT_TRUE(is_addrinfo(dns = get_addrinfo(gai, "http", 1, kv(ai_flags, AI_CANONNAME | AI_PASSIVE | AF_INET))));
     ASSERT_FALSE(result_is_ready(res));
     while (!result_is_ready(res))
         yield();
 
     ASSERT_TRUE(result_is_ready(res));
-    ASSERT_STR(result_for(res).char_ptr, "addrinfo");
+    ASSERT_STR(result_for(res).char_ptr, "finish");
     ASSERT_STR(gai, dns->ip_name);
     if (dns->addr->ai_family == AF_INET6)
         ASSERT_TRUE((is_str_in(dns->ip6_addr, "8844")));
@@ -32,18 +32,18 @@ TEST(get_addrinfo) {
 }
 
 TEST(get_nameinfo) {
-    nameinfo_t *dns;
-    rid_t res = go(worker_misc, 2, 600, "nameinfo");
-    ASSERT_TRUE(is_type(dns = get_nameinfo(gni, 443, 0), UV_CORO_NAME));
+    nameinfo_t *name = nullptr;
+    rid_t res = go(worker_misc, 3, 800, "nameinfo", "finish");
+    ASSERT_TRUE(is_nameinfo(name = get_nameinfo(gni, 443, 0)));
     ASSERT_FALSE(result_is_ready(res));
     while (!result_is_ready(res)) {
         yield();
     }
 
     ASSERT_TRUE(result_is_ready(res));
-    ASSERT_STR(result_for(res).char_ptr, "nameinfo");
-    ASSERT_STR(gai, dns->host);
-    ASSERT_STR("https", dns->service);
+    ASSERT_STR(result_for(res).char_ptr, "finish");
+    ASSERT_STR(gai, name->host);
+    ASSERT_STR("https", name->service);
 
     return 0;
 }

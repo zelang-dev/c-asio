@@ -11,7 +11,7 @@ string_t watch_path = "watchdir";
 
 void_t worker3(params_t args) {
     ASSERT_WORKER(($size(args) == 2));
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER((args[0].u_int == 25));
     ASSERT_WORKER(is_str_eq("worker", args[1].char_ptr));
     return "finish";

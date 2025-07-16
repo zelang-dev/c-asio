@@ -4,7 +4,7 @@ void_t worker_client(params_t args) {
     uv_stream_t *server = nullptr;
     ASSERT_WORKER(($size(args) == 3));
 
-    sleepfor(args[0].u_int);
+    delay(args[0].u_int);
     ASSERT_WORKER(is_str_eq("worker_client", args[1].char_ptr));
 
     ASSERT_WORKER(is_pipe(server = stream_connect("unix://test.sock")));
