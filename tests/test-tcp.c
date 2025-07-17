@@ -11,6 +11,7 @@ void_t worker_client(params_t args) {
     ASSERT_WORKER(is_str_eq("world", stream_read_wait(server)));
     ASSERT_WORKER((stream_write(server, "hello") == 0));
 
+    delay(args[0].u_int);
     return args[2].char_ptr;
 }
 

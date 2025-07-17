@@ -523,11 +523,10 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
             uv_log_error(nread);
 
         uv_read_stop(stream);
-    }
-
-    coro_await_finish(co, ((nread > 0) ? buf->base : nullptr), nread, false);
-    if (nread > 0)
+    } else if (nread > 0) {
+        coro_await_finish(co, buf->base, nread, false);
         RAII_FREE(buf->base);
+    }
 }
 
 static void tls_read_cb(uv_tls_t *strm, ssize_t nread, const uv_buf_t *buf) {
@@ -1294,7 +1293,7 @@ void fs_poll(string_t path, poll_cb pollfunc, int interval) {
 }
 
 RAII_INLINE string_t fs_watch_path(void) {
-    void_t data = get_coro_data(coro_active());
+    void_t data = coro_data();
     if (is_empty(data))
         return "";
 
@@ -1303,7 +1302,7 @@ RAII_INLINE string_t fs_watch_path(void) {
 }
 
 RAII_INLINE bool fs_watch_stop(void) {
-    void_t data = get_coro_data(coro_active());
+    void_t data = coro_data();
     bool status = false;
     if (!is_empty(data)) {
         uv_this_t *this = (uv_this_t *)data;
@@ -1469,7 +1468,7 @@ RAII_INLINE string stream_read(uv_stream_t *handle) {
 
 static void read_generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(stream));
-    routine_t *co = uv->context, *coro = get_coro_context(co);
+    routine_t *co = uv->context;
 
     if (nread < 0) {
         if (nread != UV_EOF)
@@ -1479,23 +1478,16 @@ static void read_generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t
         if (buf->base)
             RAII_FREE(buf->base);
 
-        coro_await_exit(co, nullptr, nread, (nread != UV_EOF));
-    } else if (nread == 0) {
-        uv->bufs.base = nullptr;
-        if (co == coro) {
-            coro_context_set(co, coro_running());
-            coro_await_exit(co, nullptr, nread, false);
-        }
-    } else {
+        coro_await_erred(co, nread);
+        coro_await_exit(co, nullptr, nread, false);
+    } else if (nread > 0) {
         uv->bufs.base = buf->base;
         uv->bufs.len = buf->len;
-        coro_context_set(co, co);
-        coro_await_upgrade(co, buf->base, nread, false, false, true);
+        coro_await_yield(co, buf->base, nread, false, true);
         RAII_FREE(buf->base);
         uv->bufs.base = nullptr;
-        if (is_empty(coro) && uv->is_once) {
+        if (uv->is_once)
             coro_await_exit(co, nullptr, nread, false);
-        }
     }
 }
 
@@ -1536,7 +1528,6 @@ static string stream_get(uv_stream_t *handle) {
     if (is_defined(uv_args) && uv_args->is_generator) {
         uv_args->args[0].object = handle;
         gen = get_coro_generator(uv_args->context);
-        coro_context_set(uv_args->context, coro_active());
     } else {
         if (is_defined(uv_args)) {
             uv_args->args[0].object = handle;

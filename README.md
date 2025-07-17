@@ -71,6 +71,7 @@ int main() {
 
 * [Reading/Writing files](https://docs.libuv.org/en/v1.x/guide/filesystem.html#reading-writing-files) as in [uvcat/main.c](https://github.com/libuv/libuv/blob/master/docs/code/uvcat/main.c) - 62 line *script*.
 * [Buffers and Streams](https://docs.libuv.org/en/v1.x/guide/filesystem.html#buffers-and-streams) as in [uvtee/main.c](https://github.com/libuv/libuv/blob/master/docs/code/uvtee/main.c) - 79 line *script*.
+* [Querying DNS](https://docs.libuv.org/en/v1.x/guide/networking.html#querying-dns) as in [dns/main.c](https://github.com/libuv/libuv/blob/master/docs/code/dns/main.c) - 80 line *script*.
 * [Spawning child processes](https://docs.libuv.org/en/v1.x/guide/processes.html#spawning-child-processes) as in [spawn/main.c](https://github.com/libuv/libuv/blob/master/docs/code/spawn/main.c) - 36 line *script*.
 * [Networking/TCP](https://docs.libuv.org/en/v1.x/guide/networking.html#tcp) as in [tcp-echo-server/main.c](https://github.com/libuv/libuv/blob/master/docs/code/tcp-echo-server/main.c) - 87 line *script*.
 
@@ -131,7 +132,38 @@ int uv_main(int argc, char **argv) {
 
 <table>
 <tr>
-<th>spawn.c - 13 lines</th>
+<th>dns.c - 17 lines</th>
+</tr>
+<tr>
+<td>
+
+```c
+#include "uv_coro.h"
+
+int uv_main(int argc, char **argv) {
+    string text = nullptr;
+    fprintf(stderr, "irc.libera.chat is...\033[0K\n");
+    dnsinfo_t *dns = get_addrinfo("irc.libera.chat", "6667",
+                                  3, kv(ai_flags, AF_UNSPEC),
+                                  kv(ai_socktype, SOCK_STREAM),
+                                  kv(ai_protocol, IPPROTO_TCP));
+
+    fprintf(stderr, "%s\033[0K\n", dns->ip_addr);
+    uv_stream_t *server = stream_connect_ex(RAII_SCHEME_TCP, dns->ip_addr, 6667);
+    while (text = stream_read(server))
+        fprintf(stderr, "\033[0K%s", text);
+
+    return coro_err_code();
+}
+```
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<th>spawn.c - 14 lines</th>
 </tr>
 <tr>
 <td>
@@ -140,7 +172,8 @@ int uv_main(int argc, char **argv) {
 #include "uv_coro.h"
 
 void _on_exit(int64_t exit_status, int term_signal) {
-    fprintf(stderr, "\nProcess exited with status %" PRId64 ", signal %d\n", exit_status, term_signal);
+    fprintf(stderr, "\nProcess exited with status %" PRId64 ", signal %d\n",
+            exit_status, term_signal);
 }
 
 int uv_main(int argc, char **argv) {
