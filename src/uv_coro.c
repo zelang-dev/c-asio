@@ -1586,7 +1586,7 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
     size_t len = sizeof(name);
     int r = 0;
 
-    if (scheme == RAII_SCHEME_PIPE)
+    if (scheme == RAII_SCHEME_PIPE || scheme == UV_NAMED_PIPE)
         addr_set = str_concat(2, SYS_PIPE, address);
     else
         addr_set = uv_coro_sockaddr(address, port,
@@ -1596,12 +1596,14 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
     if (!addr_set)
         return addr_set;
 
-    uv_args->bind_type = scheme;
     switch (scheme) {
+        case UV_NAMED_PIPE:
         case RAII_SCHEME_PIPE:
+            uv_args->bind_type = RAII_SCHEME_PIPE;
             handle = pipe_create(false);
             break;
         case RAII_SCHEME_TLS:
+            uv_args->bind_type = RAII_SCHEME_TLS;
             if (is_str_eq(name, "localhost"))
                 uv_os_gethostname(name, &len);
 
@@ -1618,7 +1620,9 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
             defer((func_t)evt_ctx_free, &uv_args->ctx);
             handle = tls_tcp_create(&uv_args->ctx);
             break;
+        case UV_TCP:
         default:
+            uv_args->bind_type = RAII_SCHEME_TCP;
             handle = tcp_create();
             break;
     }
@@ -1683,6 +1687,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
         return addr_set;
 
     switch (scheme) {
+        case UV_NAMED_PIPE:
         case RAII_SCHEME_PIPE:
             handle = pipe_create(false);
             r = uv_pipe_bind(handle, (string_t)addr_set);
@@ -1705,6 +1710,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
             handle = tls_tcp_create(&uv_args->ctx);
             r = uv_tcp_bind(handle, (sockaddr_t *)addr_set, flags);
             break;
+        case UV_TCP:
         default:
             handle = tcp_create();
             r = uv_tcp_bind(handle, (sockaddr_t *)addr_set, flags);
