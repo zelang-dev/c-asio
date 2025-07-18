@@ -5,6 +5,7 @@
 ## Table of Contents
 
 * [Introduction](#introduction)
+* [Design](#design)
 * [Synopsis](#synopsis)
 * [Usage](#usage)
 * [Installation](#installation)
@@ -236,10 +237,222 @@ See `branches` for previous setup, `main` is an complete makeover of previous im
 Similar approach has been made for ***C++20***, an implementation in [uvco](https://github.com/dermesser/uvco).
 The *[tests](https://github.com/dermesser/uvco/tree/master/test)* presented there currently being reimplemented for *C89* here, this project will be considered stable when *completed*. And another approach in [libasync](https://github.com/btrask/libasync) mixing [libco](https://github.com/higan-emu/libco) with **libuv**. Both approaches are **Linux** only.
 
+## Design
+
+The *intergration* pattern for all **libuv** functions taking *callback* is as [queue-work.c](https://github.com/zelang-dev/uv_coroutine/tree/main/examples/queue-work.c) example:
+
+```c
+#define USE_CORO
+#include "raii.h"
+
+#define FIB_UNTIL 25
+
+long fib_(long t) {
+    if (t == 0 || t == 1)
+        return 1;
+    else
+        return fib_(t-1) + fib_(t-2);
+}
+
+void_t fib(params_t req) {
+    int n = req->integer;
+    if (random() % 2)
+        sleepfor(1);
+    else
+        sleepfor(3);
+
+    long fib = fib_(n);
+    fprintf(stderr, "%dth fibonacci is %lu in thrd: #%d\033[0K\n", n, fib, coro_thrd_id());
+
+    return casting(fib);
+}
+
+void after_fib(int status, rid_t id) {
+    fprintf(stderr, "Done calculating %dth fibonacci, result: %d\n", status, result_for(id).integer);
+}
+
+int main(int argc, char **argv) {
+    rid_t data[FIB_UNTIL];
+    int i;
+
+    waitgroup_t wg = waitgroup_ex(FIB_UNTIL);
+    for (i = 0; i < FIB_UNTIL; i++) {
+        data[i] = go(fib, 1, casting(i));
+    }
+    waitresult_t wgr = waitfor(wg);
+
+    if ($size(wgr) == FIB_UNTIL)
+        for (i = 0; i < FIB_UNTIL; i++) {
+            after_fib(i, data[i]);
+        }
+
+    return 0;
+}
+```
+
+Every system **thread** has a **run queue** assigned, a ~tempararay~ *FIFO queue*,
+it holds **coroutine** *tasks*. This assignment is based on *system cpu cores* available,
+and set at startup, a coroutine **thread pool** set before `uv_main` is called.
+
+When a **go/coroutine** is created, it's given a *index* `result id` from *global* **array** like struct,
+a `coroutine id`, and `thread id`. Then placed into a *global* **run queue**, a *hashtable*,
+the *key* being `result id`, for schedularing. The `thread id` determines which *thread pool*
+coroutine gets assigned to.
+
+These three *data structures* are atomically accessable by all threads.
+
+The **main thread** determines and move *coroutines* from *global queue* to each *thread queue*.
+
+Each **thread's** *scheduler* manages it's own *local* **run queue** of *coroutines* by ~thread local storage~.
+It takes `coroutine tasks` from it's ~tempararay~ *FIFO queue* to *local storage*.
+
+All **libuv** functions *outlined* is as **example**, but a `waitgroup_ex(1)` of *one*.
+Currently, demonstrating `true` *libuv/Coroutine* **multi threading** is *disabled* by how current *tests* and *examples* startup.
+
+If the number of *coroutines created* before first `yield()` encountered does not equal **cpu core** *count* plus *one*.
+Then **main thread** will move all *coroutines* to itself, set each *coroutine* `thread id` to itself,
+and *mark* whole system feature *disabled*.
+
 ## Synopsis
 
 ```c
+/* Creates an coroutine of given function with arguments,
+and add to schedular, same behavior as Go. */
+C_API rid_t go(callable_t, u64, ...);
 
+/* Returns results of an completed coroutine, by `result id`, will panic,
+if called before `waitfor` returns, `coroutine` still running, or no result
+possible function. */
+C_API value_t result_for(rid_t);
+
+/* Check status of an `result id` */
+C_API bool result_is_ready(rid_t);
+
+/* Explicitly give up the CPU for at least ms milliseconds.
+Other tasks continue to run during this time. */
+C_API u32 sleepfor(u32 ms);
+
+/* Creates an coroutine of given function with argument,
+and immediately execute. */
+C_API void launch(func_t, u64, ...);
+
+/* Yield execution to another coroutine and reschedule current. */
+C_API void yield(void);
+
+/* Suspends the execution of current `Generator/Coroutine`, and passing ~data~.
+WILL PANIC if not an ~Generator~ function called in.
+WILL `yield` until ~data~ is retrived using `yield_for`. */
+C_API void yielding(void_t);
+
+/* Creates an `Generator/Coroutine` of given function with arguments,
+MUST use `yielding` to pass data, and `yield_for` to get data. */
+C_API generator_t generator(callable_t, u64, ...);
+
+/* Resume specified ~coroutine/generator~, returning data from `yielding`. */
+C_API value_t yield_for(generator_t);
+
+/* Return `generator id` in scope for last `yield_for` execution. */
+C_API rid_t yield_id(void);
+
+/* Defer execution `LIFO` of given function with argument,
+to when current coroutine exits/returns. */
+C_API void defer(func_t, void_t);
+
+/* Same as `defer` but allows recover from an Error condition throw/panic,
+you must call `catching` inside function to mark Error condition handled. */
+C_API void defer_recover(func_t, void_t);
+
+/* Compare `err` to current error condition of coroutine,
+will mark exception handled, if `true`. */
+C_API bool catching(string_t);
+
+/* Get current error condition string. */
+C_API string_t catch_message(void);
+
+/* Creates/initialize the next series/collection of coroutine's created
+to be part of `wait group`, same behavior of Go's waitGroups.
+
+All coroutines here behaves like regular functions, meaning they return values,
+and indicate a terminated/finish status.
+
+The initialization ends when `waitfor` is called, as such current coroutine will pause,
+and execution will begin and wait for the group of coroutines to finished. */
+C_API waitgroup_t waitgroup(void);
+C_API waitgroup_t waitgroup_ex(u32 capacity);
+
+/* Pauses current coroutine, and begin execution of coroutines in `wait group` object,
+will wait for all to finish.
+
+Returns `vector/array` of `results id`, accessible using `result_for` function. */
+C_API waitresult_t waitfor(waitgroup_t);
+
+C_API awaitable_t async(callable_t, u64, ...);
+C_API value_t await(awaitable_t);
+
+/* Calls ~fn~ (with ~number of args~ then ~actaul arguments~) in separate thread,
+returning without waiting for the execution of ~fn~ to complete.
+The value returned by ~fn~ can be accessed
+by calling `thrd_get()`. */
+C_API future thrd_async(thrd_func_t fn, size_t, ...);
+
+/* Calls ~fn~ (with ~args~ as argument) in separate thread, returning without waiting
+for the execution of ~fn~ to complete. The value returned by ~fn~ can be accessed
+by calling `thrd_get()`. */
+C_API future thrd_launch(thrd_func_t fn, void_t args);
+
+/* Returns the value of `future` ~promise~, a thread's shared object, If not ready, this
+function blocks the calling thread and waits until it is ready. */
+C_API values_type thrd_get(future);
+
+/* This function blocks the calling thread and waits until `future` is ready,
+will execute provided `yield` callback function continuously. */
+C_API void thrd_wait(future, wait_func yield);
+
+/* Same as `thrd_wait`, but `yield` execution to another coroutine and reschedule current,
+until `thread` ~future~ is ready, completed execution. */
+C_API void thrd_until(future);
+
+/* Check status of `future` object state, if `true` indicates thread execution has ended,
+any call thereafter to `thrd_get` is guaranteed non-blocking. */
+C_API bool thrd_is_done(future);
+C_API uintptr_t thrd_self(void);
+C_API size_t thrd_cpu_count(void);
+
+/* Return/create an arbitrary `vector/array` set of `values`,
+only available within `thread/future` */
+C_API vectors_t thrd_data(size_t, ...);
+
+/* Return/create an single `vector/array` ~value~,
+only available within `thread/future` */
+#define $(val) thrd_data(1, (val))
+
+/* Return/create an pair `vector/array` ~values~,
+only available within `thread/future` */
+#define $$(val1, val2) thrd_data(2, (val1), (val2))
+
+/* Request/return raw memory of given `size`,
+using smart memory pointer's lifetime scope handle.
+DO NOT `free`, will be freed with given `func`,
+when scope smart pointer panics/returns/exits. */
+C_API void_t malloc_full(memory_t *scope, size_t size, func_t func);
+
+/* Request/return raw memory of given `size`,
+using smart memory pointer's lifetime scope handle.
+DO NOT `free`, will be freed with given `func`,
+when scope smart pointer panics/returns/exits. */
+C_API void_t calloc_full(memory_t *scope, int count, size_t size, func_t func);
+
+/* Returns protected raw memory pointer of given `size`,
+DO NOT FREE, will `throw/panic` if memory request fails.
+This uses current `context` smart pointer, being in `guard` blocks,
+inside `thread/future`, or active `coroutine` call. */
+C_API void_t malloc_local(size_t size);
+
+/* Returns protected raw memory pointer of given `size`,
+DO NOT FREE, will `throw/panic` if memory request fails.
+This uses current `context` smart pointer, being in `guard` blocks,
+inside `thread/future`, or active `coroutine` call. */
+C_API void_t calloc_local(int count, size_t size);
 ```
 
 ## Usage
