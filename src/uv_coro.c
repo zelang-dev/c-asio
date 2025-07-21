@@ -226,7 +226,7 @@ static void fs_event_cb(uv_fs_event_t *handle, string_t filename, int events, in
         data = get_coro_data(coro);
         this.data = data;
         // Does not handle error if path is longer than 1023.
-        uv_fs_event_getpath(handle, this.charaters, &this.diff);
+        uv_fs_event_getpath(handle, this.charaters, (size_t *)&this.diff);
         coro_data_set(coro, &this);
         watchfunc(filename, events, status);
         if (data == this.data)
@@ -265,7 +265,7 @@ static void fs_poll_cb(uv_fs_poll_t *handle, int status, const uv_stat_t *prev, 
         data = get_coro_data(coro);
         this.data = data;
         // Does not handle error if path is longer than 1023.
-        uv_fs_poll_getpath(handle, this.charaters, &this.diff);
+        uv_fs_poll_getpath(handle, this.charaters, (size_t *)&this.diff);
         coro_data_set(coro, &this);
         pollerfunc(status, prev, curr);
         if (data == this.data)
@@ -871,7 +871,7 @@ static void_t uv_init(params_t uv_args) {
             case UV_POLL:
             case UV_PREPARE:
                 break;
-            case UV_CORO_LISTEN:
+            case UV_HANDLE_TYPE_MAX:
                 if (!(result = uv_listen((uv_stream_t *)stream, args[1].integer, connection_cb))) {
                     length = (int)sizeof(uv->dns->name);
                     switch (uv->bind_type) {
@@ -1652,7 +1652,7 @@ uv_stream_t *stream_listen(uv_stream_t *stream, int backlog) {
     uv_args->args[0].object = stream;
     uv_args->args[1].integer = backlog;
 
-    return (uv_stream_t *)uv_start(uv_args, UV_CORO_LISTEN, 5, false).object;
+    return (uv_stream_t *)uv_start(uv_args, UV_HANDLE_TYPE_MAX, 5, false).object;
 }
 
 uv_stream_t *stream_bind(string_t address, int flags) {
@@ -2511,11 +2511,11 @@ RAII_INLINE bool is_undefined(void_t self) {
 }
 
 RAII_INLINE bool is_defined(void_t self) {
-    return is_type(self, UV_CORO_ARGS);
+    return is_type(self, (raii_type)UV_CORO_ARGS);
 }
 
 RAII_INLINE bool is_process(void_t self) {
-    return is_type(self, UV_CORO_SPAWN);
+    return is_type(self, (raii_type)UV_CORO_SPAWN);
 }
 
 RAII_INLINE bool is_tls(uv_stream_t *self) {
@@ -2526,35 +2526,35 @@ RAII_INLINE bool is_tls(uv_stream_t *self) {
 }
 
 RAII_INLINE bool is_pipepair(void_t self) {
-    return is_type(self, UV_CORO_PIPE);
+    return is_type(self, (raii_type)UV_CORO_PIPE);
 }
 
 RAII_INLINE bool is_socketpair(void_t self) {
-    return is_type(self, UV_CORO_SOCKET);
+    return is_type(self, (raii_type)UV_CORO_SOCKET);
 }
 
 RAII_INLINE bool is_pipe_stdin(void_t self) {
-    return is_type(self, UV_CORO_PIPE_0);
+    return is_type(self, (raii_type)UV_CORO_PIPE_0);
 }
 
 RAII_INLINE bool is_pipe_stdout(void_t self) {
-    return is_type(self, UV_CORO_PIPE_1);
+    return is_type(self, (raii_type)UV_CORO_PIPE_1);
 }
 
 RAII_INLINE bool is_pipe_file(void_t self) {
-    return is_type(self, UV_CORO_PIPE_FD);
+    return is_type(self, (raii_type)UV_CORO_PIPE_FD);
 }
 
 RAII_INLINE bool is_tty_in(void_t self) {
-    return is_type(self, UV_CORO_TTY_0);
+    return is_type(self, (raii_type)UV_CORO_TTY_0);
 }
 
 RAII_INLINE bool is_tty_out(void_t self) {
-    return is_type(self, UV_CORO_TTY_1);
+    return is_type(self, (raii_type)UV_CORO_TTY_1);
 }
 
 RAII_INLINE bool is_tty_err(void_t self) {
-    return is_type(self, UV_CORO_TTY_2);
+    return is_type(self, (raii_type)UV_CORO_TTY_2);
 }
 
 RAII_INLINE bool is_tty(void_t self) {
@@ -2586,15 +2586,15 @@ RAII_INLINE bool is_udp(void_t self) {
 }
 
 RAII_INLINE bool is_udp_packet(void_t self) {
-    return is_type(self, UV_CORO_UDP);
+    return is_type(self, (raii_type)UV_CORO_UDP);
 }
 
 RAII_INLINE bool is_nameinfo(void_t self) {
-    return is_type(self, UV_CORO_NAME);
+    return is_type(self, (raii_type)UV_CORO_NAME);
 }
 
 RAII_INLINE bool is_addrinfo(void_t self) {
-    return is_type(self, UV_CORO_DNS);
+    return is_type(self, (raii_type)UV_CORO_DNS);
 }
 
 string_t uv_coro_uname(void) {

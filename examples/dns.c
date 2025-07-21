@@ -9,7 +9,7 @@ int uv_main(int argc, char **argv) {
                                   kv(ai_protocol, IPPROTO_TCP));
 
     fprintf(stderr, "%s\033[0K\n", dns->ip_addr);
-    uv_stream_t *server = stream_connect_ex(RAII_SCHEME_TCP, dns->ip_addr, 6667);
+    uv_stream_t *server = stream_connect_ex(UV_TCP, dns->ip_addr, 6667);
     while (text = stream_read(server))
         fprintf(stderr, "\033[0K%s", text);
 

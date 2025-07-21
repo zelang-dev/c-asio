@@ -67,8 +67,7 @@ typedef enum {
     UV_CORO_TTY_0,
     UV_CORO_TTY_1,
     UV_CORO_TTY_2,
-    UV_CORO_LISTEN = UV_CORO_TTY_2 + UV_HANDLE_TYPE_MAX,
-    UV_CORO_ARGS
+    UV_CORO_ARGS = UV_CORO_TTY_2 + UV_HANDLE_TYPE_MAX
 } uv_coro_types;
 
 typedef struct {
