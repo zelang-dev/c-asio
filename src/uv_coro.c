@@ -1,12 +1,39 @@
 #include "uv_coro.h"
 
-typedef struct uv_this_s {
-    void_t data;
-    ptrdiff_t diff;
-    uv_handle_t *handle;
-    uv_req_t *req;
-    char charaters[1024];
-} uv_this_t;
+struct uv_args_s {
+    uv_coro_types type;
+    raii_type bind_type;
+    bool is_path;
+    bool is_request;
+    bool is_freeable;
+    bool is_server;
+    bool is_generator;
+    bool is_once;
+    uv_fs_type fs_type;
+    uv_req_type req_type;
+    uv_handle_type handle_type;
+
+    /* total number of args in set */
+    size_t n_args;
+
+    /* allocated array of arguments */
+    arrays_t args;
+    routine_t *context;
+
+    evt_ctx_t ctx;
+    string buffer;
+    uv_buf_t bufs;
+    uv_fs_t fs_req;
+    uv_write_t write_req;
+    uv_connect_t connect_req;
+    uv_shutdown_t shutdown_req;
+    uv_getaddrinfo_t addinfo_req;
+    udp_packet_t *packet_req;
+    uv_stat_t stat[1];
+    uv_statfs_t statfs[1];
+    scandir_t dir[1];
+    dnsinfo_t dns[1];
+};
 
 struct udp_packet_s {
     uv_coro_types type;
@@ -1511,7 +1538,7 @@ static void_t stream_yield(params_t args) {
         if (!is_empty(uv->bufs.base) && uv->bufs.len > 0)
             yielding(uv->bufs.base);
         else
-            yield();
+            coro_yield_info();
     }
 
     uv_read_stop(streamer(stream));

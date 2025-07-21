@@ -67,7 +67,8 @@ typedef enum {
     UV_CORO_TTY_0,
     UV_CORO_TTY_1,
     UV_CORO_TTY_2,
-    UV_CORO_ARGS = UV_CORO_TTY_2 + UV_HANDLE_TYPE_MAX
+    UV_CORO_THIS,
+    UV_CORO_ARGS = UV_CORO_THIS + UV_HANDLE_TYPE_MAX
 } uv_coro_types;
 
 typedef struct {
@@ -192,40 +193,16 @@ typedef struct dnsinfo_s {
     char ip[INET6_ADDRSTRLEN + 1];
 } dnsinfo_t;
 
-typedef struct uv_args_s {
+typedef struct uv_args_s uv_args_t;
+typedef struct {
     uv_coro_types type;
-    raii_type bind_type;
-    bool is_path;
-    bool is_request;
-    bool is_freeable;
-    bool is_server;
-    bool is_generator;
-    bool is_once;
-    uv_fs_type fs_type;
-    uv_req_type req_type;
-    uv_handle_type handle_type;
-
-    /* total number of args in set */
-    size_t n_args;
-
-    /* allocated array of arguments */
-    arrays_t args;
-    routine_t *context;
-
-    evt_ctx_t ctx;
-    string buffer;
-    uv_buf_t bufs;
-    uv_fs_t fs_req;
-    uv_write_t write_req;
-    uv_connect_t connect_req;
-    uv_shutdown_t shutdown_req;
-    uv_getaddrinfo_t addinfo_req;
-    udp_packet_t *packet_req;
-    uv_stat_t stat[1];
-    uv_statfs_t statfs[1];
-    scandir_t dir[1];
-    dnsinfo_t dns[1];
-} uv_args_t;
+    void_t data;
+    ptrdiff_t diff;
+    uv_handle_t *handle;
+    uv_req_t *req;
+    uv_args_t *args;
+    char charaters[PATH_MAX];
+} uv_this_t;
 
 /**
 *@param stdio fd
