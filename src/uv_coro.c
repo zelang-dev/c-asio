@@ -1607,10 +1607,9 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
     uv_args_t *uv_args = uv_arguments(3, true);
     void_t addr_set = nullptr;
     void_t handle = nullptr;
-    char name[UV_MAXHOSTNAMESIZE] = CERTIFICATE;
-    char crt[UV_MAXHOSTNAMESIZE];
-    char key[UV_MAXHOSTNAMESIZE];
-    size_t len = sizeof(name);
+    string name = CERTIFICATE;
+    char crt[UV_MAXHOSTNAMESIZE + 4];
+    char key[UV_MAXHOSTNAMESIZE + 4];
     int r = 0;
 
     if (scheme == RAII_SCHEME_PIPE || scheme == UV_NAMED_PIPE)
@@ -1632,14 +1631,12 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
         case RAII_SCHEME_TLS:
             uv_args->bind_type = RAII_SCHEME_TLS;
             if (is_str_eq(name, "localhost"))
-                uv_os_gethostname(name, &len);
+                name = (string)uv_coro_hostname();
 
-            r = snprintf(crt, sizeof(crt), "%s.crt", name);
-            if (r == 0)
+            if (!(r = snprintf(crt, sizeof(crt), "%s.crt", name)))
                 RAII_LOG("Invalid hostname");
 
-            r = snprintf(key, sizeof(key), "%s.key", name);
-            if (r == 0)
+            if (!(r = snprintf(key, sizeof(key), "%s.key", name)))
                 RAII_LOG("Invalid hostname");
 
             evt_ctx_init_ex(&uv_args->ctx, crt, key);
@@ -1698,10 +1695,9 @@ uv_stream_t *stream_bind(string_t address, int flags) {
 uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, int flags) {
     void_t addr_set = nullptr, handle;
     int r = 0;
-    char name[UV_MAXHOSTNAMESIZE] = CERTIFICATE;
-    char crt[UV_MAXHOSTNAMESIZE];
-    char key[UV_MAXHOSTNAMESIZE];
-    size_t len = sizeof(name);
+    string name = CERTIFICATE;
+    char crt[UV_MAXHOSTNAMESIZE + 4];
+    char key[UV_MAXHOSTNAMESIZE + 4];
 
     uv_args_t *uv_args = uv_arguments(5, false);
     defer_recover((func_t)uv_catch_error, uv_args);
@@ -1723,7 +1719,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
             break;
         case RAII_SCHEME_TLS:
             if (is_str_eq(name, "localhost"))
-                uv_os_gethostname(name, &len);
+                name = (string)uv_coro_hostname();
 
             if (!(r = snprintf(crt, sizeof(crt), "%s.crt", name)))
                 RAII_LOG("Invalid hostname");

@@ -49,12 +49,11 @@ typedef enum {
     ai_family = RAII_COUNTER + 1,
     ai_socktype,
     ai_protocol,
-    ai_flags,
-    ai_unknown
+    ai_flags
 } ai_hints_types;
 
 typedef enum {
-    UV_CORO_DNS = ai_unknown + 1,
+    UV_CORO_DNS = ai_flags + 1,
     UV_CORO_NAME,
     UV_CORO_PIPE,
     UV_CORO_TCP,
