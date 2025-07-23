@@ -50,7 +50,7 @@ target_link_libraries(uv_coro PUBLIC uv_a)
 target_include_directories(uv_coro AFTER PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR} $<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
 target_link_libraries(uv_coro PUBLIC raii)
 
-find_package(OpenSSL 0.9.8...<2.0.0)
+find_package(OpenSSL 0.9.8...<1.1.0)
 if(OPENSSL_FOUND)
     target_include_directories(uv_coro PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR} $<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
     if(WIN32)

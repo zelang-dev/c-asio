@@ -906,7 +906,7 @@ static void_t uv_init(params_t uv_args) {
                             length = (int)sizeof(name);
                             r = uv_pipe_getsockname((const uv_pipe_t *)args[0].object, name, (size_t *)&length);
                             if (!is_equal(name, args[2].object)
-                                && (r = snprintf(name, sizeof(name), "%s", args[2].object)))
+                                && (r = snprintf(name, sizeof(name), "%s", args[2].char_ptr)))
                                 r = 0;
                             break;
                         default:

@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+#include <uv.h>
+
 #if defined(_WIN32) || defined(_WIN64)
 #include "compat/unistd.h"
 #else
 #include <unistd.h>
 #endif
-
-#include <uv.h>
 
 int std_out(const char *msg, ...) {
     va_list ap;
