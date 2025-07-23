@@ -26,7 +26,7 @@ find_package(raii QUIET)
 if(NOT raii_FOUND)
     FetchContent_Declare(raii
         URL https://github.com/zelang-dev/c-raii/archive/refs/heads/main.zip
-        URL_MD5 f8077e7920e2d4799bba1f056df69b01
+        URL_MD5 a563dba478aea631baf8167750bc943d
     )
     FetchContent_MakeAvailable(raii)
 endif()
@@ -50,7 +50,12 @@ target_link_libraries(uv_coro PUBLIC uv_a)
 target_include_directories(uv_coro AFTER PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR} $<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
 target_link_libraries(uv_coro PUBLIC raii)
 
-find_package(OpenSSL 0.9.8...<1.1.0)
+if(UNIX)
+    find_package(OpenSSL 0.9.8...<2.0.0)
+else()
+    find_package(OpenSSL 0.9.8...<1.1.0)
+endif()
+
 if(OPENSSL_FOUND)
     target_include_directories(uv_coro PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR} $<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
     if(WIN32)
