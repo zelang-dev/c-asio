@@ -7,7 +7,7 @@ on:
 jobs:
   build-macos:
     name: macOS
-    runs-on: macos-11
+    runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
       - name: Setup
