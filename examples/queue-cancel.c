@@ -20,9 +20,9 @@ void_t fib(params_t req) {
     defer_recover(signal_handler, nullptr);
     int n = req->integer;
     if (random() % 2)
-        sleepfor(1);
+        sleepfor(1000);
     else
-        sleepfor(3);
+        sleepfor(3000);
 
     long fib = fib_(n);
     fprintf(stderr, "%dth fibonacci is %lu in thrd: #%d\033[0K\n", n, fib, coro_thrd_id());

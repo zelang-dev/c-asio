@@ -12,8 +12,10 @@
 
 #ifdef _WIN32
 #define INVALID_FD -EBADF
+#define use_ipc false
 #else
 #define INVALID_FD -EBADF
+#define use_ipc true
 #endif
 
 /* Cast ~libuv~ `obj` to `uv_stream_t` ptr. */

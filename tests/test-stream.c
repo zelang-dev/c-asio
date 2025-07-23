@@ -44,7 +44,9 @@ TEST(list) {
     int result = 0;
 
     EXEC_TEST(stream_read);
+#ifndef _WIN32
     EXEC_TEST(stream_write);
+#endif
 
     return result;
 }

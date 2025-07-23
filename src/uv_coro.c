@@ -805,7 +805,7 @@ static void_t uv_init(params_t uv_args) {
     uv_args_t *uv = uv_args->object;
     arrays_t args = uv->args;
     int length, r, result = UV_EBADF;
-    uv_handle_t *stream = handler(args[0].object);
+    uv_handle_t *stream = args[0].object;
     char name[SCRAPE_SIZE * 2] = nil;
     uv->context = coro_active();
     if (uv->is_request) {
@@ -2411,15 +2411,15 @@ RAII_INLINE uv_stdio_container_t *stdio_stream(void_t handle, int flags) {
 }
 
 RAII_INLINE uv_stdio_container_t *stdio_pipeduplex(void) {
-    return stdio_stream(pipe_create_ex(true, false), UV_CREATE_PIPE | UV_READABLE_PIPE | UV_WRITABLE_PIPE);
+    return stdio_stream(pipe_create_ex(use_ipc, false), UV_CREATE_PIPE | UV_READABLE_PIPE | UV_WRITABLE_PIPE);
 }
 
 RAII_INLINE uv_stdio_container_t *stdio_piperead(void) {
-    return stdio_stream(pipe_create_ex(true, false), UV_CREATE_PIPE | UV_READABLE_PIPE);
+    return stdio_stream(pipe_create_ex(use_ipc, false), UV_CREATE_PIPE | UV_READABLE_PIPE);
 }
 
 RAII_INLINE uv_stdio_container_t *stdio_pipewrite(void) {
-    return stdio_stream(pipe_create_ex(true, false), UV_CREATE_PIPE | UV_WRITABLE_PIPE);
+    return stdio_stream(pipe_create_ex(use_ipc, false), UV_CREATE_PIPE | UV_WRITABLE_PIPE);
 }
 
 spawn_options_t *spawn_opts(string env, string_t cwd, int flags, uv_uid_t uid, uv_gid_t gid, int no_of_stdio, ...) {
