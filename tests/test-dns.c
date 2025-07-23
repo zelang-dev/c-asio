@@ -12,6 +12,7 @@ void_t worker_misc(params_t args) {
 
 TEST(get_addrinfo) {
     dnsinfo_t *dns = nullptr;
+    string ip = nullptr;
     rid_t res = go(worker_misc, 3, 1000, "addrinfo", "finish");
     ASSERT_TRUE(is_addrinfo(dns = get_addrinfo(gai, "http", 1, kv(ai_flags, AI_CANONNAME | AI_PASSIVE | AF_INET))));
     ASSERT_FALSE(result_is_ready(res));
@@ -21,10 +22,11 @@ TEST(get_addrinfo) {
     ASSERT_TRUE(result_is_ready(res));
     ASSERT_STR(result_for(res).char_ptr, "finish");
     ASSERT_STR(gai, dns->ip_name);
-    if (dns->addr->ai_family == AF_INET6)
-        ASSERT_TRUE((is_str_in(dns->ip6_addr, "8844")));
+    ASSERT_NOTNULL((ip = (string)addrinfo_ip(dns)));
+    if (dns->is_ip6)
+        ASSERT_TRUE((is_str_in(ip, "8844")));
     else
-        ASSERT_TRUE((is_str_in(dns->ip_addr, "8.8")));
+        ASSERT_TRUE((is_str_in(ip, "8.8")));
 
     ASSERT_TRUE((dns->count > 2));
 

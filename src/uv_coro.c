@@ -1383,6 +1383,13 @@ dnsinfo_t *get_addrinfo(string_t address, string_t service, u32 numhints_pair, .
     return (dnsinfo_t *)uv_start(uv_args, UV_GETADDRINFO, count, true).object;
 }
 
+RAII_INLINE string_t addrinfo_ip(dnsinfo_t *dns) {
+    if (is_addrinfo(dns))
+        return (string_t)(dns->is_ip6 ? dns->ip6_addr : dns->ip_addr);
+
+    return nullptr;
+}
+
 addrinfo_t *addrinfo_next(dnsinfo_t *dns) {
     if (is_addrinfo(dns) && !is_empty(dns->addr)) {
         addrinfo_t *dir = dns->addr;
@@ -1392,9 +1399,11 @@ addrinfo_t *addrinfo_next(dnsinfo_t *dns) {
             dns->ip_name = dir->ai_canonname;
 
         if (dir->ai_family == AF_INET) {
+            dns->is_ip6 = false;
             if (is_zero(ip = uv_ip4_name((const struct sockaddr_in *)dir->ai_addr, dns->ip, INET_ADDRSTRLEN)))
                 dns->ip_addr = dns->ip;
         } else if (dir->ai_family == AF_INET6) {
+            dns->is_ip6 = true;
             if (is_zero(ip = uv_ip6_name((const struct sockaddr_in6 *)dir->ai_addr, dns->ip, INET6_ADDRSTRLEN)))
                 dns->ip6_addr = dns->ip;
         }

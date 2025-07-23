@@ -182,6 +182,7 @@ typedef struct scandir_s {
 
 typedef struct dnsinfo_s {
     uv_coro_types type;
+    bool is_ip6;
     size_t count;
     string ip_addr, ip6_addr, ip_name;
     addrinfo_t *addr, original[1];
@@ -363,6 +364,7 @@ C_API bool fs_watch_stop(void);
 
 C_API dnsinfo_t *get_addrinfo(string_t address, string_t service, u32 numhints_pair, ...);
 C_API addrinfo_t *addrinfo_next(dnsinfo_t *);
+C_API string_t addrinfo_ip(dnsinfo_t *);
 C_API nameinfo_t *get_nameinfo(string_t addr, int port, int flags);
 
 C_API uv_pipe_t *pipe_create_ex(bool is_ipc, bool autofree);
