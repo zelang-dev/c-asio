@@ -1,4 +1,4 @@
-name: armv7, aarch64, ppc64le
+name: armv7, aarch64, riscv64
 
 on:
   pull_request:
@@ -17,14 +17,17 @@ jobs:
             arch: armv7
           - target: aarch64
             arch: aarch64
-          - target: ppc64v2
-            arch: ppc64le
+          - target: riscv64
+            arch: riscv64
     steps:
       - uses: actions/checkout@v4
       - uses: uraimo/run-on-arch-action@v3
         with:
           arch: ${{ matrix.arch }}
           distro:  ubuntu_latest
+          githubToken: ${{ github.token }}
+          setup: |
+            mkdir -p "${PWD}/artifacts"
           install: |
             apt-get update -q -y
             apt-get install -q -y --no-install-recommends cmake build-essential
@@ -35,6 +38,9 @@ jobs:
           run: |
             mkdir build
             cd build
-            cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
+            cmake -DCMAKE_BUILD_TYPE=Debug ..
             cmake --build .
             ctest -C Debug --output-on-failure -F
+      - name: Show the artifact
+        run: |
+          ls -al "${PWD}/artifacts"

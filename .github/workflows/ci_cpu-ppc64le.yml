@@ -1,4 +1,4 @@
-name: riscv64 & s390x by ucontext  .
+name: ppc64le - ucontext
 
 on:
   pull_request:
@@ -13,16 +13,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: riscv64
-            arch: riscv64
-          - target: s390x
-            arch: s390x
+          - target: ppc64v2
+            arch: ppc64le
     steps:
       - uses: actions/checkout@v4
       - uses: uraimo/run-on-arch-action@v3
         with:
           arch: ${{ matrix.arch }}
           distro:  ubuntu_latest
+          githubToken: ${{ github.token }}
+          setup: |
+            mkdir -p "${PWD}/artifacts"
           install: |
             apt-get update -q -y
             apt-get install -q -y --no-install-recommends cmake build-essential
@@ -33,6 +34,9 @@ jobs:
           run: |
             mkdir build
             cd build
-            cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
+            cmake -DCMAKE_BUILD_TYPE=Debug ..
             cmake --build .
             ctest -C Debug --output-on-failure -F
+      - name: Show the artifact
+        run: |
+          ls -al "${PWD}/artifacts"

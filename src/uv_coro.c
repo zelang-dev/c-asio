@@ -63,7 +63,7 @@ static uv_fs_event_t *fs_event_create(void);
 static uv_tcp_t *tls_tcp_create(void_t extra);
 static void_t fs_init(params_t);
 static void_t uv_init(params_t);
-static value_t uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_request);
+static template uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_request);
 static string stream_get(uv_stream_t *handle);
 static udp_packet_t *udp_get(uv_udp_t *handle);
 static void udp_packet_free(udp_packet_t *handle);
@@ -315,7 +315,7 @@ static RAII_INLINE void_t coro_fs_poll(params_t args) {
     return uv_start((uv_args_t *)args->object, UV_FS_POLL, 4, false).object;
 }
 
-static value_t fs_start(uv_args_t *uv_args, uv_fs_type fs_type, size_t n_args, bool is_path) {
+static template fs_start(uv_args_t *uv_args, uv_fs_type fs_type, size_t n_args, bool is_path) {
     uv_args->fs_type = fs_type;
     uv_args->n_args = n_args;
     uv_args->is_path = is_path;
@@ -323,7 +323,7 @@ static value_t fs_start(uv_args_t *uv_args, uv_fs_type fs_type, size_t n_args, b
     return coro_await(fs_init, 1, uv_args);
 }
 
-static value_t uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_request) {
+static template uv_start(uv_args_t *uv_args, int type, size_t n_args, bool is_request) {
     if (uv_args->is_request = is_request)
         uv_args->req_type = type;
     else

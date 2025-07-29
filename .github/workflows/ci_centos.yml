@@ -1,0 +1,30 @@
+name: CentOS Stream 9+
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-centos:
+    name: CentOS
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    container: quay.io/centos/centos:stream9
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          dnf install git make cmake gcc gcc-c++ binutils glibc-devel valgrind-devel valgrind autoconf libtool bison automake libxml2-devel libatomic sudo which -y
+      - name: Configure & build
+        run: |
+            mkdir build
+            cd build
+            cmake .. -DCMAKE_BUILD_TYPE=Debug
+            cmake --build .
+      - name: Run tests
+        run: |
+            cd build
+            ctest -C Debug --output-on-failure -F

@@ -323,7 +323,7 @@ C_API rid_t go(callable_t, u64, ...);
 /* Returns results of an completed coroutine, by `result id`, will panic,
 if called before `waitfor` returns, `coroutine` still running, or no result
 possible function. */
-C_API value_t result_for(rid_t);
+C_API template result_for(rid_t);
 
 /* Check status of an `result id` */
 C_API bool result_is_ready(rid_t);
@@ -349,7 +349,7 @@ MUST use `yielding` to pass data, and `yield_for` to get data. */
 C_API generator_t generator(callable_t, u64, ...);
 
 /* Resume specified ~coroutine/generator~, returning data from `yielding`. */
-C_API value_t yield_for(generator_t);
+C_API template yield_for(generator_t);
 
 /* Return `generator id` in scope for last `yield_for` execution. */
 C_API rid_t yield_id(void);
@@ -387,7 +387,7 @@ Returns `vector/array` of `results id`, accessible using `result_for` function. 
 C_API waitresult_t waitfor(waitgroup_t);
 
 C_API awaitable_t async(callable_t, u64, ...);
-C_API value_t await(awaitable_t);
+C_API template await(awaitable_t);
 
 /* Calls ~fn~ (with ~number of args~ then ~actaul arguments~) in separate thread,
 returning without waiting for the execution of ~fn~ to complete.
@@ -402,7 +402,7 @@ C_API future thrd_launch(thrd_func_t fn, void_t args);
 
 /* Returns the value of `future` ~promise~, a thread's shared object, If not ready, this
 function blocks the calling thread and waits until it is ready. */
-C_API values_type thrd_get(future);
+C_API template_t thrd_get(future);
 
 /* This function blocks the calling thread and waits until `future` is ready,
 will execute provided `yield` callback function continuously. */

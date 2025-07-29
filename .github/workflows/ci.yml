@@ -1,11 +1,11 @@
-name: windows & linux
+name: Windows & Ubuntu & macOS x86_64
 on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-ubuntu:
     name: Linux ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
@@ -14,6 +14,8 @@ jobs:
         include:
           - target: amd64
             flags: -m64
+          - target: x86
+            flags: -m32
     steps:
       - uses: actions/checkout@v4
       - name: Prepare
@@ -27,14 +29,14 @@ jobs:
             cd build
             cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON -DCMAKE_C_FLAGS=${{ matrix.flags }} ..
             cmake --build .
-      - name: Run test examples
+      - name: Run tests
         run: |
             cd build
             ctest -C Debug --output-on-failure -F
 
   build-windows:
     name: Windows (${{ matrix.arch }})
-    runs-on: windows-latest
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
@@ -50,8 +52,24 @@ jobs:
             cd build
             cmake .. -DBUILD_TESTS=ON -A ${{ matrix.arch }}
             cmake --build . --config Debug
-      - name: Run test examples
+      - name: Run tests
         shell: cmd
+        run: |
+            cd build
+            ctest -C Debug --output-on-failure -F
+
+  build-macos:
+    name: macOS
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure & build
+        run: |
+            mkdir build
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
+            cmake --build .
+      - name: Run tests
         run: |
             cd build
             ctest -C Debug --output-on-failure -F
