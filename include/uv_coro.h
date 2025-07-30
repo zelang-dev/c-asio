@@ -390,11 +390,36 @@ C_API string stream_read_wait(uv_stream_t *);
 C_API int stream_write(uv_stream_t *, string_t text);
 C_API int stream_shutdown(uv_stream_t *);
 
+/*
+* Parse `address` separating `scheme`, `host`, and `port`.
+*
+* - Pause/loop current `coroutine` until connection to `address`.
+* - The returned `stream` handle `type` depends on `scheme` part of `address`.
+*
+* NOTE: Combines `uv_pipe_connect`, `uv_tcp_connect`, `uv_ip4_addr`, `uv_ip6_addr`. */
 C_API uv_stream_t *stream_connect(string_t address);
 C_API uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port);
+
+/*
+* Starts listing for `new` incoming connections on the given `stream` handle.
+*
+* - Pause/loop current `coroutine` until accepted connection.
+* - The returned ~client~ handle `type` depends on `scheme` part of `stream_bind` call.
+* - This new ~stream~ MUST CALL `stream_handler` for processing.
+*
+* NOTE: Combines `uv_listen` and `uv_accept`. */
 C_API uv_stream_t *stream_listen(uv_stream_t *, int backlog);
+
+/*
+* Parse `address` separating `scheme`, `host`, and `port`.
+*
+* - The returned `stream` handle `type` depends on `scheme` part of `address`.
+*
+* NOTE: Combines `uv_pipe_bind`, `uv_tcp_bind`, `uv_ip4_addr`, `uv_ip6_addr`. */
 C_API uv_stream_t *stream_bind(string_t address, int flags);
 C_API uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, int flags);
+
+/* Creates and launch new coroutine to handle `connected` client `handle`. */
 C_API void stream_handler(stream_cb connected, uv_stream_t *client);
 
 C_API uv_udp_t *udp_create(void);
