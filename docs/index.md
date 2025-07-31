@@ -576,6 +576,8 @@ C_API int spawn_signal(spawn_t, int sig);
 
 ## Synopsis
 
+* [Coroutines (C++20)](https://en.cppreference.com/w/cpp/language/coroutines.html)
+
 ```c
 /* Creates an coroutine of given function with arguments,
 and add to schedular, same behavior as Go. */
