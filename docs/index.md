@@ -34,7 +34,7 @@ This library provides **ease of use** *convenience* wrappers for **[libuv](http:
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 int uv_main(int argc, char **argv) {
     printf("Now quitting.\n");
@@ -89,7 +89,7 @@ int main() {
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 int uv_main(int argc, char **argv) {
     uv_file fd = fs_open(argv[1], O_RDONLY, 0);
@@ -108,7 +108,7 @@ int uv_main(int argc, char **argv) {
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 int uv_main(int argc, char **argv) {
     string text = nullptr;
@@ -142,7 +142,7 @@ int uv_main(int argc, char **argv) {
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 int uv_main(int argc, char **argv) {
     string text = nullptr;
@@ -173,7 +173,7 @@ int uv_main(int argc, char **argv) {
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 void _on_exit(int64_t exit_status, int term_signal) {
     fprintf(stderr, "\nProcess exited with status %" PRId64 ", signal %d\n",
@@ -201,7 +201,7 @@ int uv_main(int argc, char **argv) {
 <td>
 
 ```c
-#include "uv_coro.h"
+#include "asio.h"
 
 #define DEFAULT_PORT 7000
 #define DEFAULT_BACKLOG 128
@@ -325,7 +325,7 @@ The *documentation* at [boost.cobalt](https://www.boost.org/doc/libs/master/libs
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 
-C_API uv_loop_t *uv_coro_loop(void);
+C_API uv_loop_t *asio_loop(void);
 C_API u32 delay(u32 ms);
 
 C_API string fs_readfile(string_t path);
@@ -452,8 +452,8 @@ C_API udp_packet_t *udp_recv(uv_udp_t *);
 C_API int udp_send_packet(udp_packet_t *, string_t);
 
 /* For displaying Cpu core count, library version, and OS system info from `uv_os_uname()`. */
-C_API string_t uv_coro_uname(void);
-C_API string_t uv_coro_hostname(void);
+C_API string_t asio_uname(void);
+C_API string_t asio_hostname(void);
 
 C_API bool is_undefined(void_t);
 C_API bool is_defined(void_t);

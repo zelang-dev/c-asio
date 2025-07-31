@@ -1,5 +1,5 @@
-#ifndef _UV_CORO_H
-#define _UV_CORO_H
+#ifndef _ASIO_H
+#define _ASIO_H
 
 #define INTERRUPT_MODE UV_RUN_NOWAIT
 #ifndef CERTIFICATE
@@ -55,25 +55,25 @@ typedef enum {
 } ai_hints_types;
 
 typedef enum {
-    UV_CORO_DNS = ai_flags + 1,
-    UV_CORO_NAME,
-    UV_CORO_PIPE,
-    UV_CORO_TCP,
-    UV_CORO_UDP,
-    UV_CORO_SPAWN,
-    UV_CORO_SOCKET,
-    UV_CORO_PIPE_0,
-    UV_CORO_PIPE_1,
-    UV_CORO_PIPE_FD,
-    UV_CORO_TTY_0,
-    UV_CORO_TTY_1,
-    UV_CORO_TTY_2,
-    UV_CORO_THIS,
-    UV_CORO_ARGS = UV_CORO_THIS + UV_HANDLE_TYPE_MAX
-} uv_coro_types;
+    ASIO_DNS = ai_flags + 1,
+    ASIO_NAME,
+    ASIO_PIPE,
+    ASIO_TCP,
+    ASIO_UDP,
+    ASIO_SPAWN,
+    ASIO_SOCKET,
+    ASIO_PIPE_0,
+    ASIO_PIPE_1,
+    ASIO_PIPE_FD,
+    ASIO_TTY_0,
+    ASIO_TTY_1,
+    ASIO_TTY_2,
+    ASIO_THIS,
+    ASIO_ARGS = ASIO_THIS + UV_HANDLE_TYPE_MAX
+} asio_types;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t reader[1];
@@ -82,7 +82,7 @@ typedef struct {
 } pipe_in_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t writer[1];
@@ -91,7 +91,7 @@ typedef struct {
 } pipe_out_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t handle[1];
@@ -100,7 +100,7 @@ typedef struct {
 } pipe_file_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd[2];
     union {
         uv_stream_t writer[1];
@@ -113,14 +113,14 @@ typedef struct {
 } pipepair_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_os_sock_t fds[2];
     uv_tcp_t writer[1];
     uv_tcp_t reader[1];
 } socketpair_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t reader[1];
@@ -129,7 +129,7 @@ typedef struct {
 } tty_in_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t writer[1];
@@ -138,7 +138,7 @@ typedef struct {
 } tty_out_t;
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     uv_file fd;
     union {
         uv_stream_t erred[1];
@@ -159,7 +159,7 @@ typedef void (*spawn_cb)(int64_t status, int signal);
 typedef void (*spawn_handler_cb)(uv_stream_t *input, string output, uv_stream_t *duplex);
 
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     void *data;
     int stdio_count;
     spawn_cb exiting_cb;
@@ -170,7 +170,7 @@ typedef struct {
 typedef struct spawn_s _spawn_t;
 typedef _spawn_t *spawn_t;
 typedef struct nameinfo_s {
-    uv_coro_types type;
+    asio_types type;
     string_t host;
     string_t service;
 } nameinfo_t;
@@ -183,7 +183,7 @@ typedef struct scandir_s {
 } scandir_t;
 
 typedef struct dnsinfo_s {
-    uv_coro_types type;
+    asio_types type;
     bool is_ip6;
     size_t count;
     string ip_addr, ip6_addr, ip_name;
@@ -197,7 +197,7 @@ typedef struct dnsinfo_s {
 
 typedef struct uv_args_s uv_args_t;
 typedef struct {
-    uv_coro_types type;
+    asio_types type;
     void_t data;
     ptrdiff_t diff;
     uv_handle_t *handle;
@@ -436,7 +436,7 @@ C_API udp_packet_t *udp_recv(uv_udp_t *);
 C_API int udp_send_packet(udp_packet_t *, string_t);
 
 #define UV_TLS                  RAII_SCHEME_TLS
-#define UV_CTX                  UV_CORO_ARGS + RAII_NAN
+#define UV_CTX                  ASIO_ARGS + RAII_NAN
 
 #define foreach_in_dir(X, S)    uv_dirent_t *(X) = nil; \
     for(X = fs_scandir_next((scandir_t *)S); X != nullptr; X = fs_scandir_next((scandir_t *)S))
@@ -446,11 +446,11 @@ C_API int udp_send_packet(udp_packet_t *, string_t);
     for (X = ((dnsinfo_t *)S)->original; X != nullptr; X = addrinfo_next((dnsinfo_t *)S))
 #define foreach_addrinfo(...)   foreach_xp(foreach_in_info, (__VA_ARGS__))
 
-C_API uv_loop_t *uv_coro_loop(void);
+C_API uv_loop_t *asio_loop(void);
 
 /* For displaying Cpu core count, library version, and OS system info from `uv_os_uname()`. */
-C_API string_t uv_coro_uname(void);
-C_API string_t uv_coro_hostname(void);
+C_API string_t asio_uname(void);
+C_API string_t asio_hostname(void);
 
 C_API bool is_undefined(void_t);
 C_API bool is_defined(void_t);
@@ -481,4 +481,4 @@ C_API u32 delay(u32 ms);
 }
 #endif
 
-#endif /* _UV_CORO_H */
+#endif /* _ASIO_H */
