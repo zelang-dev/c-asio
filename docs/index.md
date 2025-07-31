@@ -1,6 +1,8 @@
-# uv_coroutine
+# c-asio
 
-[![Windows & Ubuntu & macOS x86_64](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci.yml/badge.svg)](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci.yml)[![CentOS Stream 9+](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_centos.yml/badge.svg)](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_centos.yml)[![armv7, aarch64, riscv64](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_cpu.yml/badge.svg)](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_cpu.yml)[![ppc64le - ucontext](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_cpu-ppc64le.yml/badge.svg)](https://github.com/zelang-dev/uv_coroutine/actions/workflows/ci_cpu-ppc64le.yml)
+[![Windows & Ubuntu & macOS x86_64](https://github.com/zelang-dev/c-asio/actions/workflows/ci.yml/badge.svg)](https://github.com/zelang-dev/c-asio/actions/workflows/ci.yml)[![CentOS Stream 9+](https://github.com/zelang-dev/c-asio/actions/workflows/ci_centos.yml/badge.svg)](https://github.com/zelang-dev/c-asio/actions/workflows/ci_centos.yml)[![armv7, aarch64, riscv64](https://github.com/zelang-dev/c-asio/actions/workflows/ci_cpu.yml/badge.svg)](https://github.com/zelang-dev/c-asio/actions/workflows/ci_cpu.yml)[![ppc64le - ucontext](https://github.com/zelang-dev/c-asio/actions/workflows/ci_cpu-ppc64le.yml/badge.svg)](https://github.com/zelang-dev/c-asio/actions/workflows/ci_cpu-ppc64le.yml)
+
+A *memory safe* focus **C framework**, combining [c-raii](https://zelang-dev.github.io/c-raii), [libuv](http://docs.libuv.org), [coroutine](https://en.wikipedia.org/wiki/Coroutine) and other *concurrency primitives*.
 
 ## Table of Contents
 
@@ -242,7 +244,7 @@ The *[tests](https://github.com/dermesser/uvco/tree/master/test)* presented ther
 
 ## Design
 
-The *intergration* pattern for all **libuv** functions taking *callback* is as [queue-work.c](https://github.com/zelang-dev/uv_coroutine/tree/main/examples/queue-work.c) **example**:
+The *intergration* pattern for all **libuv** functions taking *callback* is as [queue-work.c](https://github.com/zelang-dev/c-asio/tree/main/examples/queue-work.c) **example**:
 
 ```c
 #define USE_CORO
@@ -310,15 +312,22 @@ These three *data structures* are atomically accessable by all threads.
 * Each *coroutine* is *self containing*, can be assigned to any *thread*, at any point within a `yield` execution.
 
 All **libuv** functions *outlined/api*, is as **example**, but having a `waitgroup` of *one*.
-Demonstrating `true` *libuv/Coroutine* **multi threading** is *disabled* by how current *[tests](https://github.com/zelang-dev/uv_coroutine/tree/main/tests)* and *[examples](https://github.com/zelang-dev/uv_coroutine/tree/main/examples)* startup.
+Demonstrating `true` *libuv/Coroutine* **multi threading** is *disabled* by how current *[tests](https://github.com/zelang-dev/c-asio/tree/main/tests)* and *[examples](https://github.com/zelang-dev/c-asio/tree/main/examples)* startup.
 
 If the *number* of coroutines *created* before the first `yield` encountered, does not equal **cpu core** *count* plus *one*.
 Then **main thread** will move all *coroutines* to itself, set each *coroutine* `thread id` to itself,
 and *mark* whole system feature *disabled*.
 
+* Codebase will need current **libuv** function wrapper implementations to have **all arguments pass** into **coroutine** creation, right now the *initaliaztion* process using a **uv_loop_t** *thread* `handle` of wrong **coroutine thread pool**, disabling is a **tempararay** fix.
+
 ### API
 
-The *documentation* at [boost.cobalt](https://www.boost.org/doc/libs/master/libs/cobalt/doc/html/index.html) is a good staring point. The *principles* still apply, just done *automatically* hereforth.
+The *documentation* at [boost.cobalt](https://www.boost.org/doc/libs/master/libs/cobalt/doc/html/index.html) is a good staring point. The *principles* still apply, just done *automatically*, with some *naming differences* hereforth. Like *boost.asio* **io_context** is *similar* to **uv_loop_t** in *libuv* and *others* in:
+
+* [Coroutine Patterns: Problems and Solutions Using Coroutines in a Modern Codebase](https://youtu.be/Iqrd9vsLrak) **YouTube**
+* [Introduction to C++ Coroutines Through a Thread Scheduling Demonstration](https://youtu.be/kIPzED3VD3w) **YouTube**
+* [C++ Coroutine Intuition](https://youtu.be/NNqVt73OsfI) **YouTube**
+* [Asynchrony with ASIO and coroutines](https://youtu.be/0i_pFZSijZc) **YouTube**
 
 ```c
 /* This library provides its own ~main~,
@@ -784,7 +793,7 @@ C_API void_t coro_await_erred(routine_t *, int);
 
 ## Usage
 
-### See [examples](https://github.com/zelang-dev/uv_coroutine/tree/main/examples) and [tests](https://github.com/zelang-dev/uv_coroutine/tree/main/tests) folder
+### See [examples](https://github.com/zelang-dev/c-asio/tree/main/examples) and [tests](https://github.com/zelang-dev/c-asio/tree/main/tests) folder
 
 ## Installation
 
@@ -810,7 +819,7 @@ cmake --build . --config Debug/Release
 
 ## Contributing
 
-Contributions are encouraged and welcome; I am always happy to get feedback or pull requests on Github :) Create [Github Issues](https://github.com/zelang-dev/uv_coroutine/issues) for bugs and new features and comment on the ones you are interested in.
+Contributions are encouraged and welcome; I am always happy to get feedback or pull requests on Github :) Create [Github Issues](https://github.com/zelang-dev/c-asio/issues) for bugs and new features and comment on the ones you are interested in.
 
 ## License
 

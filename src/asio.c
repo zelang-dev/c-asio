@@ -1365,7 +1365,7 @@ dnsinfo_t *get_addrinfo(string_t address, string_t service, u32 numhints_pair, .
     if (numhints_pair > 0) {
         hints = uv_args->dns->original;
         va_start(ap, numhints_pair);
-        for (i = 0; i < numhints_pair; i++) {
+        for (i = 0; i < (int)numhints_pair; i++) {
             k = va_arg(ap, ai_hints_types);
             hint = va_arg(ap, int);
             switch (k) {

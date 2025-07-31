@@ -13,10 +13,10 @@ set(TARGET_LIST
 )
 
 add_executable(child child.c)
-target_link_libraries(child uv_coro)
+target_link_libraries(child asio)
 
 foreach (TARGET ${TARGET_LIST})
     add_executable(${TARGET} ${TARGET}.c )
-    target_link_libraries(${TARGET} uv_coro)
+    target_link_libraries(${TARGET} asio)
     add_test(NAME ${TARGET} COMMAND ${TARGET} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endforeach()
