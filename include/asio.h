@@ -26,6 +26,7 @@
 
 /* Cast ~libuv~ `obj` to `uv_req_t` ptr. */
 #define requester(obj) ((uv_req_t *)obj)
+#define CLR_LN  "\033[0K\n"
 
 #if defined(_MSC_VER)
     #define S_IRUSR S_IREAD  /* read, user */
@@ -477,6 +478,9 @@ which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 C_API u32 delay(u32 ms);
 
+C_API EVP_PKEY *rsa_pkey(int keylength);
+C_API X509 *x509_self_signed(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
+C_API bool pkey_x509_export(EVP_PKEY *pkey, X509 *x509, string_t hostname);
 #ifdef __cplusplus
 }
 #endif
