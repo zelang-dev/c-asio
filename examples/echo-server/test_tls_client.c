@@ -8,11 +8,11 @@
 //
 //%///////////////////////////////////////////////////////////////////////////
 
-#include "uv_tls.h"
 #include <string.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include "evt_tls.h"
+#include <rpmalloc.h>
 
 void echo_read(uv_tls_t *strm, ssize_t nrd, const uv_buf_t *bfr)
 {
@@ -71,6 +71,7 @@ void on_connect(uv_connect_t *req, int status)
 
 int main()
 {
+    uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
     uv_loop_t *loop = uv_default_loop();
     //free on uv_close_cb via uv_tls_close call
     uv_tcp_t *client = malloc(sizeof *client);

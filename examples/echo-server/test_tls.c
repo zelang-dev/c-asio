@@ -8,11 +8,11 @@
 //
 //%///////////////////////////////////////////////////////////////////////////
 
-#include "uv_tls.h"
 #include <string.h>
-#include <stdlib.h>
 #include <stdint.h>
 #include <signal.h>
+#include "evt_tls.h"
+#include <rpmalloc.h>
 
 void on_write(uv_tls_t *tls, int status) {
     uv_tls_close(tls, (uv_tls_close_cb)free);
@@ -53,6 +53,7 @@ void on_connect_cb(uv_stream_t *server, int status) {
 #define HOSTNAME "localhost"
 #endif
 int main() {
+    uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
     uv_loop_t *loop = uv_default_loop();
     int port = 9010, r = 0;
     evt_ctx_t ctx;

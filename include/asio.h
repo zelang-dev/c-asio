@@ -6,7 +6,7 @@
     #define CERTIFICATE "localhost"
 #endif
 
-#include "uv_tls.h"
+#include "evt_tls.h"
 #include "url_http.h"
 #include "reflection.h"
 
@@ -69,9 +69,50 @@ typedef enum {
     ASIO_TTY_0,
     ASIO_TTY_1,
     ASIO_TTY_2,
+    ASIO_SSL_CERT,
+    ASIO_SSL_REQ,
+    ASIO_SSL_PKEY,
     ASIO_THIS,
     ASIO_ARGS = ASIO_THIS + UV_HANDLE_TYPE_MAX
 } asio_types;
+
+/* X509v3 distinguished names and extensions */
+typedef enum {
+    /* country */
+    dn_c = ASIO_ARGS + 1,
+    /* state */
+    dn_st,
+    /* locality */
+    dn_l,
+    /* organisation */
+    dn_o,
+    /* organizational unit */
+    dn_ou,
+    /* common name */
+    dn_cn,
+    /* Subject Alternative Name */
+    ext_san = dn_cn + NID_subject_alt_name,
+    /* Issuer Alternative Name */
+    ext_ian = dn_cn + NID_issuer_alt_name,
+    /* Key Usage */
+    ext_ku = dn_cn + NID_key_usage,
+    /* Netscape Cert Type */
+    ext_nct = dn_cn + NID_netscape_cert_type,
+    /* sha256 With RSA Encryption */
+    rsa_sha256 = ext_nct + NID_sha256WithRSAEncryption,
+    /* sha384 With RSA Encryption */
+    rsa_sha384 = ext_nct + NID_sha384WithRSAEncryption,
+    /* sha512 With RSA Encryption */
+    rsa_sha512 = ext_nct + NID_sha512WithRSAEncryption,
+    /* sha224 With RSA Encryption */
+    rsa_sha224 = ext_nct + NID_sha224WithRSAEncryption,
+    /* sha512_224 With RSA Encryption */
+    rsa_sha512_224 = ext_nct + NID_sha512_224WithRSAEncryption,
+    /* sha251_256 With RSA Encryption */
+    rsa_sha512_256 = ext_nct + NID_sha512_256WithRSAEncryption,
+    pkey_type,
+    pkey_bits
+} csr_types;
 
 typedef struct {
     asio_types type;
@@ -472,15 +513,44 @@ C_API bool is_tty_out(void_t);
 C_API bool is_tty_err(void_t);
 C_API bool is_addrinfo(void_t);
 C_API bool is_nameinfo(void_t);
+C_API bool is_ssl_cert(void_t);
+C_API bool is_ssl_req(void_t);
+C_API bool is_ssl_pkey(void_t);
 
 /* This library provides its own ~main~,
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 C_API u32 delay(u32 ms);
 
+#ifdef _WIN32
+#define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")
+#define _BIO_MODE_W(flags) (((flags) & PKCS7_BINARY) ? "wb" : "w")
+#else
+#define _BIO_MODE_R(flags) "r"
+#define _BIO_MODE_W(flags) "w"
+#endif
+/* OpenSSL Certificate */
+typedef struct certificate_object asio_cert_t;
+
+/* OpenSSL AsymmetricKey */
+typedef struct pkey_object asio_pkey_t;
+
+/* OpenSSL Certificate Signing Request */
+typedef struct x509_request_object asio_req_t;
+
+C_API void asio_ssl_error(void);
+
+C_API asio_pkey_t *pkey_create(u32 num_pairs, ...);
+C_API asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+C_API asio_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+
+C_API bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext);
+C_API bool csr_x509_export(X509_REQ *req, string_t path_noext);
+C_API bool cert_x509_export(X509 *cert, string_t path_noext);
+
 C_API EVP_PKEY *rsa_pkey(int keylength);
-C_API X509 *x509_self_signed(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
-C_API bool pkey_x509_export(EVP_PKEY *pkey, X509 *x509, string_t hostname);
+C_API X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
+C_API bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext);
 #ifdef __cplusplus
 }
 #endif

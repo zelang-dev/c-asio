@@ -8,6 +8,7 @@
 // See https://github.com/deleisha/evt-tls
 //%///////////////////////////////////////////////////////////////////////////
 #include "asio.h"
+
 /*
  *All the asserts used in the code are possible targets for error
  * handling/error reporting
@@ -97,18 +98,18 @@ void evt_tls_set_writer(evt_tls_t *tls, net_wrtr my_writer) {
 
 void evt_ctx_set_reader(evt_ctx_t *ctx, net_rdr my_reader) {
     ctx->reader = my_reader;
-    //RAII_ASSERT( ctx->reader != NULL);
+    RAII_ASSERT(ctx->reader != NULL);
 }
 
 void evt_tls_set_reader(evt_tls_t *tls, net_rdr my_reader) {
     tls->reader = my_reader;
-    //RAII_ASSERT( ctx->reader != NULL);
+    RAII_ASSERT(tls->reader != NULL);
 }
 
 
 void evt_ctx_set_nio(evt_ctx_t *ctx, net_rdr my_reader, net_wrtr my_writer) {
     ctx->reader = my_reader;
-    //RAII_ASSERT( ctx->reader != NULL);
+    RAII_ASSERT(ctx->reader != NULL);
 
     ctx->writer = my_writer;
     RAII_ASSERT(ctx->writer != NULL);
@@ -148,11 +149,17 @@ int evt_ctx_init(evt_ctx_t *tls) {
         return -1;
     }
 
-    long options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1_3;
+    long options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3;
     SSL_CTX_set_options(tls->ctx, options);
 
     SSL_CTX_set_mode(tls->ctx, SSL_MODE_AUTO_RETRY | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE);
-
+    SSL_CTX_set_cipher_list(tls->ctx,
+                            "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:"
+                            "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:"
+                            "DHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-SHA256:"
+                            "DHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384:"
+                            "ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256:HIGH:!aNULL:!eNULL:"
+                            "!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA");
     tls->type = UV_CTX;
     tls->data = NULL;
     tls->uv_args = NULL;
@@ -409,9 +416,8 @@ int evt_is_tls_stream(const char *bfr, const int nrd) {
     return is_tls;
 }
 
-static void alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf)
-{
-    buf->base = (char*)malloc(size);
+static void alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    buf->base = (char *)malloc(size);
     memset(buf->base, 0, size);
     buf->len = (unsigned long)size;
     RAII_ASSERT(buf->base != NULL && "Memory allocation failed");
@@ -423,8 +429,8 @@ int uv_tls_writer(evt_tls_t *t, void *bfr, int sz) {
     b.base = bfr;
     b.len = sz;
     uv_tls_t *uvt = t->data;
-    if(uv_is_writable((uv_stream_t*)(uvt->tcp_hdl)) ) {
-        rv = uv_try_write((uv_stream_t*)(uvt->tcp_hdl), &b, 1);
+    if (uv_is_writable((uv_stream_t *)(uvt->tcp_hdl))) {
+        rv = uv_try_write((uv_stream_t *)(uvt->tcp_hdl), &b, 1);
     }
     return rv;
 }
@@ -432,51 +438,47 @@ int uv_tls_writer(evt_tls_t *t, void *bfr, int sz) {
 //int uv_tls_init(uv_loop_t *loop, evt_ctx_t *ctx, uv_tls_t *endpt)
 //the tcp handle being passed should have been initialized or does not required
 //to be initialized as uv_tls_init will not call uv_tcp_init
-int uv_tls_init(evt_ctx_t *ctx, uv_tcp_t *tcp, uv_tls_t *endpt)
-{
+int uv_tls_init(evt_ctx_t *ctx, uv_tcp_t *tcp, uv_tls_t *endpt) {
     int r = 0;
-    memset( endpt, 0, sizeof *endpt);
+    memset(endpt, 0, sizeof * endpt);
 
     //r = uv_tcp_init(loop, &(endpt->tcp_hdl));
 
     evt_tls_t *t = evt_ctx_get_tls(ctx);
 
     //Replace the NULL with a meaningful error later
-    RAII_ASSERT( t != NULL );
+    RAII_ASSERT(t != NULL);
 
     t->data = endpt;
     tcp->data = endpt;
 
-    endpt->tcp_hdl    = tcp;
-    endpt->tls        = t;
-    endpt->tls_rd_cb  = NULL;
+    endpt->tcp_hdl = tcp;
+    endpt->tls = t;
+    endpt->tls_rd_cb = NULL;
     endpt->tls_cls_cb = NULL;
     endpt->tls_hsk_cb = NULL;
-    endpt->tls_wr_cb  = NULL;
+    endpt->tls_wr_cb = NULL;
     endpt->type = UV_TLS;
     return r;
 }
 
-void on_tcp_eof(uv_handle_t *handle)
-{
-    uv_tls_t *utls = (uv_tls_t*)handle->data;
+void on_tcp_eof(uv_handle_t *handle) {
+    uv_tls_t *utls = (uv_tls_t *)handle->data;
     evt_tls_free(utls->tls);
     free(handle);
 }
 
-void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data)
-{
-    uv_tls_t *parent = (uv_tls_t*)stream->data;
+void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data) {
+    uv_tls_t *parent = (uv_tls_t *)stream->data;
 
-    RAII_ASSERT( parent != NULL);
-    if ( nrd <= 0 ) {
-        if( nrd == UV_EOF) {
-            if ( evt_tls_is_handshake_over(parent->tls) ) {
+    RAII_ASSERT(parent != NULL);
+    if (nrd <= 0) {
+        if (nrd == UV_EOF) {
+            if (evt_tls_is_handshake_over(parent->tls)) {
                 uv_tls_close(parent, (uv_tls_close_cb)free);
-            }
-            else {
+            } else {
                 //if handshake is not over, simply tear down without close_notify
-                uv_close((uv_handle_t*)stream, on_tcp_eof);
+                uv_close((uv_handle_t *)stream, on_tcp_eof);
             }
         }
         free(data->base);
@@ -486,29 +488,26 @@ void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data)
     free(data->base);
 }
 
-static void on_hd_complete( evt_tls_t *t, int status)
-{
-    uv_tls_t *ut = (uv_tls_t*)t->data;
-    RAII_ASSERT( ut != NULL && ut->tls_hsk_cb != NULL);
-    ut->tls_hsk_cb(ut, status -1);
+static void on_hd_complete(evt_tls_t *t, int status) {
+    uv_tls_t *ut = (uv_tls_t *)t->data;
+    RAII_ASSERT(ut != NULL && ut->tls_hsk_cb != NULL);
+    ut->tls_hsk_cb(ut, status - 1);
 }
 
 
-int uv_tls_accept(uv_tls_t *t, uv_handshake_cb cb)
-{
+int uv_tls_accept(uv_tls_t *t, uv_handshake_cb cb) {
     int rv = 0;
-    RAII_ASSERT( t != NULL);
+    RAII_ASSERT(t != NULL);
     t->tls_hsk_cb = cb;
     evt_tls_t *tls = t->tls;
     rv = evt_tls_accept(tls, on_hd_complete);
-    uv_read_start((uv_stream_t*)(t->tcp_hdl), alloc_cb, on_tcp_read);
+    uv_read_start((uv_stream_t *)(t->tcp_hdl), alloc_cb, on_tcp_read);
     return rv;
 }
 
-static void evt_on_rd(evt_tls_t *t, char *bfr, int sz)
-{
+static void evt_on_rd(evt_tls_t *t, char *bfr, int sz) {
     uv_buf_t data;
-    uv_tls_t *tls = (uv_tls_t*)t->data;
+    uv_tls_t *tls = (uv_tls_t *)t->data;
 
     data.base = bfr;
     data.len = sz;
@@ -517,70 +516,63 @@ static void evt_on_rd(evt_tls_t *t, char *bfr, int sz)
     tls->tls_rd_cb(tls, sz, &data);
 }
 
-void my_uclose_cb(uv_handle_t *handle)
-{
-    uv_tls_t *utls = (uv_tls_t*)handle->data;
-    RAII_ASSERT( utls->tls_cls_cb != NULL);
+void my_uclose_cb(uv_handle_t *handle) {
+    uv_tls_t *utls = (uv_tls_t *)handle->data;
+    RAII_ASSERT(utls->tls_cls_cb != NULL);
     evt_tls_free(utls->tls);
     utls->tls_cls_cb(utls);
     free(handle);
 }
 
-void on_close(evt_tls_t *tls, int status)
-{
-    uv_tls_t *ut = (uv_tls_t*)tls->data;
-    RAII_ASSERT( ut->tls_cls_cb != NULL);
+void on_close(evt_tls_t *tls, int status) {
+    uv_tls_t *ut = (uv_tls_t *)tls->data;
+    RAII_ASSERT(ut->tls_cls_cb != NULL);
 
-    if ( !uv_is_closing((uv_handle_t*)(ut->tcp_hdl)))
-        uv_close( (uv_handle_t*)(ut->tcp_hdl), my_uclose_cb);
+    if (!uv_is_closing((uv_handle_t *)(ut->tcp_hdl)))
+        uv_close((uv_handle_t *)(ut->tcp_hdl), my_uclose_cb);
 }
 
-int uv_tls_close(uv_tls_t *strm,  uv_tls_close_cb cb)
-{
+int uv_tls_close(uv_tls_t *strm, uv_tls_close_cb cb) {
     strm->tls_cls_cb = cb;
 
     return evt_tls_close(strm->tls, on_close);
 }
 
-int uv_tls_read(uv_tls_t *tls, uv_tls_read_cb cb)
-{
-    uv_tls_t *ptr = (uv_tls_t*)tls;
+int uv_tls_read(uv_tls_t *tls, uv_tls_read_cb cb) {
+    uv_tls_t *ptr = (uv_tls_t *)tls;
     ptr->tls_rd_cb = cb;
     return evt_tls_read(ptr->tls, evt_on_rd);
 }
 
-static void on_hshake(evt_tls_t *etls, int status)
-{
+static void on_hshake(evt_tls_t *etls, int status) {
     RAII_ASSERT(etls != NULL);
-    uv_tls_t *ut = (uv_tls_t*)etls->data;
+    uv_tls_t *ut = (uv_tls_t *)etls->data;
     RAII_ASSERT(ut != NULL && ut->tls_hsk_cb != NULL);
     ut->tls_hsk_cb(ut, status - 1);
 }
 
-int uv_tls_connect(uv_tls_t *t, uv_handshake_cb cb)
-{
-    RAII_ASSERT( t != NULL);
+int uv_tls_connect(uv_tls_t *t, uv_handshake_cb cb) {
+    RAII_ASSERT(t != NULL);
     t->tls_hsk_cb = cb;
     evt_tls_t *evt = t->tls;
-    RAII_ASSERT( evt != NULL);
+    RAII_ASSERT(evt != NULL);
 
     evt_tls_connect(evt, on_hshake);
-    return uv_read_start((uv_stream_t*)(t->tcp_hdl), alloc_cb, on_tcp_read);
+    return uv_read_start((uv_stream_t *)(t->tcp_hdl), alloc_cb, on_tcp_read);
 }
 
 void on_evt_write(evt_tls_t *tls, int status) {
-    RAII_ASSERT( tls != NULL);
-    uv_tls_t *ut = (uv_tls_t*)tls->data;
-    RAII_ASSERT( ut != NULL && ut->tls_wr_cb != NULL);
+    RAII_ASSERT(tls != NULL);
+    uv_tls_t *ut = (uv_tls_t *)tls->data;
+    RAII_ASSERT(ut != NULL && ut->tls_wr_cb != NULL);
     ut->tls_wr_cb(ut, status);
 }
 
-int uv_tls_write(uv_tls_t *stream, uv_buf_t *buf, uv_tls_write_cb cb)
-{
-    RAII_ASSERT( stream != NULL);
+int uv_tls_write(uv_tls_t *stream, uv_buf_t *buf, uv_tls_write_cb cb) {
+    RAII_ASSERT(stream != NULL);
     stream->tls_wr_cb = cb;
     evt_tls_t *evt = stream->tls;
-    RAII_ASSERT( evt != NULL);
+    RAII_ASSERT(evt != NULL);
 
     return evt_tls_write(evt, buf->base, buf->len, on_evt_write);
 }
