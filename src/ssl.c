@@ -258,7 +258,7 @@ static bool parse_config(struct x509_request *req, hash_t *optional_args) {
         long cipher_algo = raii_value(item).s_long;
         const EVP_CIPHER *cipher = get_cipher(cipher_algo);
         if (cipher == nullptr) {
-            RAII_INFO("Unknown cipher algorithm for private key");
+            RAII_LOG("Unknown cipher algorithm for private key");
             return false;
         } else {
             req->priv_key_encrypt_cipher = cipher;
