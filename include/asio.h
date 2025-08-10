@@ -530,19 +530,20 @@ C_API u32 delay(u32 ms);
 #define _BIO_MODE_W(flags) "w"
 #endif
 /* OpenSSL Certificate */
-typedef struct certificate_object asio_cert_t;
+typedef struct certificate_object ASIO_cert_t;
 
 /* OpenSSL AsymmetricKey */
-typedef struct pkey_object asio_pkey_t;
+typedef struct pkey_object ASIO_pkey_t;
 
 /* OpenSSL Certificate Signing Request */
-typedef struct x509_request_object asio_req_t;
+typedef struct x509_request_object ASIO_req_t;
 
-C_API void asio_ssl_error(void);
+C_API void ASIO_ssl_error(void);
+C_API void ASIO_ssl_init(void);
 
-C_API asio_pkey_t *pkey_create(u32 num_pairs, ...);
-C_API asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
-C_API asio_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+C_API ASIO_pkey_t *pkey_create(u32 num_pairs, ...);
+C_API ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+C_API ASIO_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
 
 C_API bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext);
 C_API bool csr_x509_export(X509_REQ *req, string_t path_noext);

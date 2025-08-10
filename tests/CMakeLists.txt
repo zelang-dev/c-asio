@@ -7,6 +7,7 @@ set(TARGET_LIST
  test-dns
  test-stream
  test-tcp
+ test-tls
  test-udp
  test-pipe
  test-spawn

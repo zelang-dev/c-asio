@@ -14,6 +14,7 @@
  * handling/error reporting
 */
 
+static char default_ssl_conf_filename[UV_MAXHOSTNAMESIZE];
 evt_endpt_t evt_tls_get_role(const evt_tls_t *t) {
     RAII_ASSERT(t != NULL);
 #if OPENSSL_VERSION_NUMBER < 0x10002000L
@@ -38,14 +39,6 @@ SSL_CTX *evt_get_SSL_CTX(const evt_ctx_t *ctx) {
 
 SSL *evt_get_ssl(const evt_tls_t *tls) {
     return tls->ssl;
-}
-
-static void tls_begin(void) {
-    SSL_library_init();
-    SSL_load_error_strings();
-    ERR_load_BIO_strings();
-    OpenSSL_add_all_algorithms();
-    ERR_load_crypto_strings();
 }
 
 evt_tls_t *evt_ctx_get_tls(evt_ctx_t *d_eng) {
@@ -98,21 +91,16 @@ void evt_tls_set_writer(evt_tls_t *tls, net_wrtr my_writer) {
 
 void evt_ctx_set_reader(evt_ctx_t *ctx, net_rdr my_reader) {
     ctx->reader = my_reader;
-    RAII_ASSERT(ctx->reader != NULL);
 }
 
 void evt_tls_set_reader(evt_tls_t *tls, net_rdr my_reader) {
     tls->reader = my_reader;
-    RAII_ASSERT(tls->reader != NULL);
 }
 
 
 void evt_ctx_set_nio(evt_ctx_t *ctx, net_rdr my_reader, net_wrtr my_writer) {
     ctx->reader = my_reader;
-    RAII_ASSERT(ctx->reader != NULL);
-
     ctx->writer = my_writer;
-    RAII_ASSERT(ctx->writer != NULL);
 }
 
 int evt_ctx_set_crt_key(evt_ctx_t *tls, const char *crtf, const char *key) {
@@ -138,13 +126,24 @@ int evt_ctx_set_crt_key(evt_ctx_t *tls, const char *crtf, const char *key) {
 }
 
 int evt_ctx_init(evt_ctx_t *tls) {
-    tls_begin();
+    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr);
 
-    //Currently we support only TLS, No DTLS
-    //XXX SSLv23_method is deprecated change this,
-    //Allow evt_ctx_init to take the method as input param,
-    //allow others like dtls
-    tls->ctx = SSL_CTX_new(SSLv23_method());
+    /* Determine default SSL configuration file */
+    string config_filename = getenv("OPENSSL_CONF");
+    if (config_filename == nullptr) {
+        config_filename = getenv("SSLEAY_CONF");
+    }
+
+    /* default to 'openssl.cnf' if no environment variable is set */
+    if (config_filename == nullptr) {
+        snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s/%s",
+                 X509_get_default_cert_area(),
+                 "openssl.cnf");
+    } else {
+        snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename),"%s", config_filename);
+    }
+
+    tls->ctx = SSL_CTX_new(TLS_method());
     if (!tls->ctx) {
         return -1;
     }
@@ -387,13 +386,11 @@ void evt_ctx_free(evt_ctx_t *ctx) {
     SSL_CTX_free(ctx->ctx);
     ctx->ctx = NULL;
 
-    ERR_remove_state(0);
     ENGINE_cleanup();
     CONF_modules_unload(1);
     ERR_free_strings();
     EVP_cleanup();
     sk_SSL_COMP_free(SSL_COMP_get_compression_methods());
-    //SSL_COMP_free_compression_methods();
     CRYPTO_cleanup_all_ex_data();
 }
 

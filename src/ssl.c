@@ -132,7 +132,7 @@ static const EVP_CIPHER *get_cipher(long algo) { /* {{{ */
 			varname = defval;   \
 			insert_string(optional_args, key, varname);   \
 			if (varname == nullptr) {  \
-				asio_ssl_error();   \
+				ASIO_ssl_error();   \
 			}   \
 		}       \
 	} while(0)
@@ -144,34 +144,6 @@ static const EVP_CIPHER *get_cipher(long algo) { /* {{{ */
 		varname = defval; \
         insert_unsigned(optional_args, key, varname);   \
     }
-
-/*
- * Copy src to string dst of size siz.  At most siz-1 characters
- * will be copied.  Always NUL terminates (unless siz == 0).
- * Returns strlen(src); if retval >= siz, truncation occurred.
- */
-static size_t strlcpy(char *dst, string_t src, size_t siz) {
-    string_t s = src;
-    size_t n = siz;
-
-    /* Copy as many bytes as will fit */
-    if (n != 0) {
-        while (--n != 0) {
-            if ((*dst++ = *src++) == 0)
-                break;
-        }
-    }
-
-    /* Not enough room in dst, add NUL and traverse rest of src */
-    if (n == 0) {
-        if (siz != 0)
-            *dst = '\0';		/* NUL-terminate dst */
-        while (*src++)
-            ;
-    }
-
-    return(src - s - 1);
-}
 
 static bool add_ext(STACK_OF(X509_REQUEST) *sk, int nid, char *value) {
     X509_EXTENSION *ex;
@@ -188,7 +160,7 @@ static bool config_check(string_t section_label, string_t config_filename, strin
     X509V3_set_ctx_test(&ctx);
     X509V3_set_nconf(&ctx, config);
     if (!X509V3_EXT_add_nconf(config, &ctx, (char *)sections, nullptr)) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         RAII_INFO("Error loading %s section %s of %s",
                   section_label,
                   sections,
@@ -224,7 +196,7 @@ static bool parse_config(struct x509_request *req, hash_t *optional_args) {
     SET_OPTIONAL_STRING_ARG("config_section_name", req->section_name, "req");
     req->global_config = NCONF_new(nullptr);
     if (!NCONF_load(req->global_config, default_ssl_conf_filename, nullptr))
-        asio_ssl_error();
+        ASIO_ssl_error();
 
     req->req_config = NCONF_new(nullptr);
     if (!NCONF_load(req->req_config, req->config_filename, nullptr))
@@ -276,7 +248,7 @@ static bool parse_config(struct x509_request *req, hash_t *optional_args) {
 
     if (req->md_alg == nullptr) {
         req->md_alg = req->digest = EVP_sha1();
-        asio_ssl_error();
+        ASIO_ssl_error();
     }
 
     ASIO_SSL_CONFIG_SYNTAX(extensions_section);
@@ -333,7 +305,7 @@ static int load_rand_file(const char *file, int *egdsocket, int *seeded) {
 
     if (file == nullptr || !RAND_load_file(file, -1)) {
         if (RAND_status() == 0) {
-            asio_ssl_error();
+            ASIO_ssl_error();
             RAII_LOG("Unable to load random state; not enough random data!");
             return false;
         }
@@ -356,7 +328,7 @@ static int write_rand_file(const char *file, int egdsocket, int seeded) {
     }
     RAND_ADD_TIME();
     if (file == nullptr || !RAND_write_file(file)) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         RAII_LOG("Unable to write random state");
         return false;
     }
@@ -404,13 +376,13 @@ static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
     EVP_PKEY *params = nullptr;
     EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(type, nullptr);
     if (!ctx) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         goto cleanup;
     }
 
     if (type != EVP_PKEY_RSA) {
         if (EVP_PKEY_paramgen_init(ctx) <= 0) {
-            asio_ssl_error();
+            ASIO_ssl_error();
             goto cleanup;
         }
 
@@ -418,7 +390,7 @@ static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
 #if !defined(NO_DSA)
             case EVP_PKEY_DSA:
                 if (EVP_PKEY_CTX_set_dsa_paramgen_bits(ctx, req->priv_key_bits) <= 0) {
-                    asio_ssl_error();
+                    ASIO_ssl_error();
                     goto cleanup;
                 }
                 break;
@@ -426,7 +398,7 @@ static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
 #if !defined(NO_DH)
             case EVP_PKEY_DH:
                 if (EVP_PKEY_CTX_set_dh_paramgen_prime_len(ctx, req->priv_key_bits) <= 0) {
-                    asio_ssl_error();
+                    ASIO_ssl_error();
                     goto cleanup;
                 }
                 break;
@@ -436,30 +408,30 @@ static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
         }
 
         if (EVP_PKEY_paramgen(ctx, &params) <= 0) {
-            asio_ssl_error();
+            ASIO_ssl_error();
             goto cleanup;
         }
 
         EVP_PKEY_CTX_free(ctx);
         ctx = EVP_PKEY_CTX_new(params, nullptr);
         if (!ctx) {
-            asio_ssl_error();
+            ASIO_ssl_error();
             goto cleanup;
         }
     }
 
     if (EVP_PKEY_keygen_init(ctx) <= 0) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         goto cleanup;
     }
 
     if (type == EVP_PKEY_RSA && EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, req->priv_key_bits) <= 0) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         goto cleanup;
     }
 
     if (EVP_PKEY_keygen(ctx, &key) <= 0) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         goto cleanup;
     }
 
@@ -530,7 +502,7 @@ static bool make_csr_req(struct x509_request *req, X509_REQ *x, u32 num_pairs, v
                     case ext_san:
                     case ext_ku:
                     case ext_nct:
-                        if (!add_ext((struct stack_st_X509_REQUEST *)exts, k - dn_cn, v))
+                        if (!add_ext((STACK_OF(X509_REQUEST) *)exts, k - dn_cn, v))
                             return false;
                         break;
                 }
@@ -801,17 +773,17 @@ static void_t x509_thread(args_t args) {
             bio_out = BIO_new_file(req, _BIO_MODE_W(PKCS7_BINARY));
             if (bio_out != nullptr) {
                 if (!X509_REQ_print(bio_out, csr))
-                    asio_ssl_error();
+                    ASIO_ssl_error();
 
                 if (!PEM_write_bio_X509_REQ(bio_out, csr)) {
-                    asio_ssl_error();
+                    ASIO_ssl_error();
                     RAII_INFO("Error writing PEM to file %s", req);
                     BIO_free(bio_out);
                     return nullptr;
                 }
                 BIO_free(bio_out);
             } else {
-                asio_ssl_error();
+                ASIO_ssl_error();
                 RAII_INFO("Error opening file %s", req);
                 return nullptr;
             }
@@ -822,18 +794,18 @@ static void_t x509_thread(args_t args) {
             bio_out = BIO_new_file(crt, _BIO_MODE_W(PKCS7_BINARY));
             if (bio_out) {
                 if (!X509_print(bio_out, x509))
-                    asio_ssl_error();
+                    ASIO_ssl_error();
 
                 if (!PEM_write_bio_X509(bio_out, x509))
-                    asio_ssl_error();
+                    ASIO_ssl_error();
             } else {
-                asio_ssl_error();
+                ASIO_ssl_error();
                 RAII_INFO("Error opening file %s", crt);
                 return nullptr;
             }
 
             if (!BIO_free(bio_out)) {
-                asio_ssl_error();
+                ASIO_ssl_error();
             }
         } else if (is_ssl_pkey(args[0].object)) {
             pkey = args[0].object;
@@ -843,7 +815,7 @@ static void_t x509_thread(args_t args) {
             if (parse_config(&x509_req, (items = hash_create_ex(128)))) {
                 bio_out = BIO_new_file(key, _BIO_MODE_W(PKCS7_BINARY));
                 if (bio_out == NULL) {
-                    asio_ssl_error();
+                    ASIO_ssl_error();
                     goto clean_exit;
                 }
 
@@ -861,7 +833,7 @@ static void_t x509_thread(args_t args) {
                     bio_out, pkey, cipher,
                     (unsigned char *)passphrase, (int)passphrase_len, NULL, NULL);
                 if (!pem_write) {
-                    asio_ssl_error();
+                    ASIO_ssl_error();
                 }
             }
 
@@ -922,7 +894,7 @@ static void_t pkey_thread(args_t args) {
                 || (EVP_PKEY_keygen_init(ctx) <= 0)
                 || (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keylength) <= 0)
                 || (EVP_PKEY_keygen(ctx, &pkey) <= 0)) {
-                asio_ssl_error();
+                ASIO_ssl_error();
                 return nullptr;
             }
             break;
@@ -934,7 +906,7 @@ static void_t pkey_thread(args_t args) {
     return $(pkey);
 }
 
-asio_pkey_t *pkey_create(u32 num_pairs, ...) {}
+ASIO_pkey_t *pkey_create(u32 num_pairs, ...) {}
 
 EVP_PKEY *rsa_pkey(int keylength) {
     EVP_PKEY *pkey = EVP_PKEY_new();
@@ -1026,11 +998,11 @@ bool cert_x509_export(X509 *cert, string_t path_noext) {
     return thrd_get(fut).boolean;
 }
 
-asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
+ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
     va_list ap;
     struct x509_request req;
-    asio_req_t *x509_request_obj = nullptr;
-    asio_pkey_t *pkey_object = nullptr;
+    ASIO_req_t *x509_request_obj = nullptr;
+    ASIO_pkey_t *pkey_object = nullptr;
     X509_REQ *csr = nullptr;
     hash_t *args = nullptr;
     bool is_good = false, is_bad = false;
@@ -1069,7 +1041,7 @@ asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
                         is_bad = true;
                     } else {
                         if (X509_REQ_sign(csr, req.priv_key, req.digest)) {
-                            x509_request_obj = calloc_local(1, sizeof(asio_req_t));
+                            x509_request_obj = calloc_local(1, sizeof(ASIO_req_t));
                             x509_request_obj->csr = csr;
                             x509_request_obj->value = nullptr;
                             x509_request_obj->type = ASIO_SSL_REQ;
@@ -1081,7 +1053,7 @@ asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
 
                         if (we_made_the_key && !is_bad) {
                             /* and an object for the private key */
-                            asio_pkey_t *pkey_object = calloc_local(1, sizeof(asio_pkey_t));
+                            ASIO_pkey_t *pkey_object = calloc_local(1, sizeof(ASIO_pkey_t));
                             pkey_object->is_private = true;
                             pkey_object->pkey = req.priv_key;
                             pkey_object->value = x509_request_obj;
@@ -1095,21 +1067,21 @@ asio_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
                     is_bad = true;
                 }
             } else {
-                asio_ssl_error();
+                ASIO_ssl_error();
             }
         }
         dispose_config(&req);
     }
 
     if (is_bad) {
-        asio_ssl_error();
+        ASIO_ssl_error();
         X509_REQ_free(csr);
     }
 
     return x509_request_obj;
 }
 
-void asio_ssl_error(void) {
+void ASIO_ssl_error(void) {
     int error_code = ERR_get_error();
     char buf[UV_MAXHOSTNAMESIZE] = {0};
     if (!error_code)
@@ -1130,7 +1102,7 @@ RAII_INLINE bool is_ssl_cert(void_t self) {
     return is_type(self, (raii_type)ASIO_SSL_CERT);
 }
 
-void asio_ssl_init(void) {
+void ASIO_ssl_init(void) {
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined (LIBRESSL_VERSION_NUMBER)
     OPENSSL_config(nullptr);
     SSL_library_init();
@@ -1153,7 +1125,8 @@ void asio_ssl_init(void) {
         snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s/%s",
                  X509_get_default_cert_area(),
                  "openssl.cnf");
+        RAII_INFO("> %s <"CLR_LN, default_ssl_conf_filename);
     } else {
-        strlcpy(default_ssl_conf_filename, config_filename, sizeof(default_ssl_conf_filename));
+        snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s", config_filename);
     }
 }

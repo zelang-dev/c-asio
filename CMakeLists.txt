@@ -52,7 +52,7 @@ target_link_libraries(asio PUBLIC uv_a)
 target_include_directories(asio AFTER PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR} $<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
 target_link_libraries(asio PUBLIC raii)
 
-find_package(OpenSSL 1.1.0...<3.0.0)
+find_package(OpenSSL 1.1.0...3.0.2)
 if(OPENSSL_FOUND)
     target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR} $<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
     if(WIN32)
@@ -96,6 +96,27 @@ else()
     add_definitions(-D_CRT_SECURE_NO_DEPRECATE)
     add_definitions("/wd4244 /wd4267 /wd4033 /wd4715 /wd4996")
 endif()
+
+find_package(ZLIB CONFIG)
+if(ZLIB_FOUND)
+    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+    message(STATUS "Cmake FindZLIB: using ZLIB includes at: ${ZLIB_INCLUDE_DIR}")
+    message(STATUS "Cmake FindZLIB: using ZLIB libraries: ${ZLIB_LIBRARIES}")
+else()
+    FetchContent_Declare(ZLIB
+        URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+        URL_MD5 9855b6d802d7fe5b7bd5b196a2271655
+    )
+    FetchContent_MakeAvailable(ZLIB)
+    option(ZLIB_BUILD_MINIZIP "Enable building libminizip contrib" OFF)
+    option(ZLIB_BUILD_EXAMPLES "Enable Zlib Examples as tests" OFF)
+    option(ZLIB_INSTALL "Enable installation of zlib" ON)
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "Build tests" FORCE)
+    set(ZLIB_BUILD_MINIZIP OFF CACHE BOOL "Build libminizip" FORCE)
+    set(ZLIB_INSTALL ON CACHE BOOL "Install zlib" FORCE)
+    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+endif()
+target_link_libraries(asio PUBLIC ${ZLIB_LIBRARIES})
 
 # enable the address sanitizer to catch bugs
 option(ENABLE_ASAN "Enable AddressSanitizer for Debug builds" ON)
