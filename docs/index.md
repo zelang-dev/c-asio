@@ -320,6 +320,9 @@ and *mark* whole system feature *disabled*.
 
 * Codebase will need current **libuv** function wrapper implementations to have **all arguments pass** into **coroutine** creation, right now the *initaliaztion* process using a **uv_loop_t** *thread* `handle` of wrong **coroutine thread pool**, disabling is a **tempararay** fix.
 
+The approach *outlined* and *things still to be worked out*, is as **Go** [The Scheduler Saga](https://youtu.be/YHRO5WQGh0k), [Queues, Fairness, and The Go Scheduler](https://youtu.be/wQpC99Xu1U4) and **Rust**
+[Making the Tokio scheduler 10x faster](https://tokio.rs/blog/2019-10-scheduler).
+
 ### API
 
 The *documentation* at [boost.cobalt](https://www.boost.org/doc/libs/master/libs/cobalt/doc/html/index.html) is a good staring point. The *principles* still apply, just done *automatically*, with some *naming differences* hereforth. Like *boost.asio* **io_context** is *similar* to **uv_loop_t** in *libuv* and *others* in:
