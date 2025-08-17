@@ -1460,6 +1460,7 @@ static void_t stream_client(params_t args) {
 		uv_handle_set_data(handler(client), (void_t)uv->tls->uv_args);
 		defer((func_t)uv_arguments_free, uv->tls->uv_args);
 		defer(tls_close_free, uv->tls);
+		yield();
 	} else {
         uv_handle_set_data(handler(client), nullptr);
         defer(uv_close_free, client);
