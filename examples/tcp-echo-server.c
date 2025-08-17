@@ -17,8 +17,8 @@ int uv_main(int argc, char **argv) {
 	string_t host = is_secure ? "tls://127.0.0.1:%d" : "0.0.0.0:%d";
 
 	if (snprintf(addr, sizeof(addr), host, DEFAULT_PORT)) {
-		if (is_secure)
-			use_certificate(nullptr, 0);
+		//if (is_secure)
+		//	use_certificate(nullptr, 0);
 
 		server = stream_bind(addr, 0);
         while (server) {
