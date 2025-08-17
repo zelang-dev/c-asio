@@ -19,6 +19,7 @@ struct uv_args_s {
     /* allocated array of arguments */
     arrays_t args;
     routine_t *context;
+    generator_t yield;
 
     evt_ctx_t ctx;
     uv_tls_t *tls;
@@ -391,16 +392,30 @@ static void on_connect(uv_connect_t *req, int status) {
     }
 }
 
+static void tls_read_cb(uv_tls_t* strm, ssize_t nrd, const uv_buf_t* bfr) {
+	uv_args_t *uv = (uv_args_t *)strm->uv_args;
+	routine_t *co = uv->context;
+	if (nrd <= 0)
+		return;
+
+	uv->buffer = bfr->base;
+	coro_await_yield(co, uv->buffer, nrd, false, true);
+	uv->buffer = nullptr;
+}
+
 static void on_listen_handshake(uv_tls_t *ut, int status) {
     uv_args_t *uv = (uv_args_t *)ut->uv_args;
     routine_t *co = uv->context;
 
-    if (status < 0)
+	if (0 == status) {
+		uv_tls_read(ut, tls_read_cb);
+		uv_handle_set_data(handler(ut->tcp_hdl), (void_t)uv);
+		coro_await_finish(co, streamer(ut->tcp_hdl), status, false);
+	} else {
+		uv_tls_close(ut, (uv_tls_close_cb)free);
         coro_err_set(co, status);
-    else
-        uv_handle_set_data(handler(ut->tcp_hdl), (void_t)uv);
-
-    coro_await_finish(co, (!status ? streamer(ut->tcp_hdl) : nullptr), status, (status < 0));
+		coro_await_exit(co, nullptr, status, true);
+	}
 }
 
 static void connection_cb(uv_stream_t *server, int status) {
@@ -414,51 +429,55 @@ static void connection_cb(uv_stream_t *server, int status) {
     routine_t *co = uv->context;
     uv_loop_t *uvLoop = asio_loop();
     void_t handle = nullptr;
-    int r = status;
+    int result = status;
     bool is_ready = false, halt = true;
 
     if (status == 0) {
         if (uv->bind_type == UV_TLS) {
             handle = RAII_CALLOC(1, sizeof(uv_tcp_t));
-            r = uv_tcp_init(uvLoop, (uv_tcp_t *)handle);
-            if (!r && !(r = uv_accept(server, (uv_stream_t *)handle))) {
+			result = uv_tcp_init(uvLoop, (uv_tcp_t *)handle);
+			if (!result && !(result = uv_accept(server, (uv_stream_t *)handle))) {
                 uv_tls_t *client = RAII_MALLOC(sizeof(uv_tls_t)); //freed on uv_close callback
-                if ((r = uv_tls_init(&uv->ctx, handle, client)) < 0) {
+				if ((result = uv_tls_init(&uv->ctx, handle, client)) < 0) {
                     RAII_FREE(client);
                 } else {
                     halt = false;
                     uv->tls = client;
                     client->type = UV_TLS;
                     client->uv_args = (void_t)uv;
-                    uv_tls_accept(client, on_listen_handshake);
-                }
+					result = uv_tls_accept(client, on_listen_handshake);
+				}
             }
         } else if (uv->bind_type == RAII_SCHEME_TCP) {
             handle = RAII_CALLOC(1, sizeof(uv_tcp_t));
-            r = uv_tcp_init(uvLoop, (uv_tcp_t *)handle);
+			result = uv_tcp_init(uvLoop, (uv_tcp_t *)handle);
         } else if (uv->bind_type == RAII_SCHEME_PIPE) {
             handle = RAII_CALLOC(1, sizeof(uv_pipe_t));
-            r = uv_pipe_init(uvLoop, (uv_pipe_t *)handle, 0);
+			result = uv_pipe_init(uvLoop, (uv_pipe_t *)handle, 0);
         }
 
-        if (!r && (uv->bind_type != UV_TLS)) {
-            if (!(r = uv_accept(server, streamer(handle)))) {
+		if (!result && (uv->bind_type != UV_TLS)) {
+			if (!(result = uv_accept(server, streamer(handle)))) {
                 is_ready = true;
                 uv_handle_set_data(handler(handle), (void_t)uv);
             }
         }
     }
 
-    if (r) {
-        uv_log_error(r);
+	if (result) {
+		uv_log_error(result);
         if (!is_empty(handle))
             RAII_FREE(handle);
 
-        coro_err_set(co, r);
+		coro_err_set(co, result);
     }
 
-    coro_await_upgrade(co, (is_ready ? streamer(handle) : nullptr),
-                       r, r, halt, (uv->bind_type != UV_TLS));
+	coro_await_upgrade(co,
+		(is_ready ? streamer(handle) : nullptr),
+		result,
+		result,
+		halt,
+		(uv->bind_type != UV_TLS));
 }
 
 static void getnameinfo_cb(uv_getnameinfo_t *req, int status, string_t hostname, string_t service) {
@@ -533,12 +552,11 @@ static void write_cb(uv_write_t *req, int status) {
 
 static void tls_write_cb(uv_tls_t *tls, int status) {
     uv_args_t *uv = (uv_args_t *)tls->uv_args;
-    routine_t *co = uv->context;
-    if (status < 0) {
+    routine_t *coro = uv->args[1].object;
+    if (status < 0)
         uv_log_error(status);
-    }
 
-    coro_await_finish(co, nullptr, status, true);
+	coro_await_yield(coro, nullptr, status, true, true);
 }
 
 static void alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
@@ -559,16 +577,6 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         coro_await_finish(co, buf->base, nread, false);
         RAII_FREE(buf->base);
     }
-}
-
-static void tls_read_cb(uv_tls_t *strm, ssize_t nread, const uv_buf_t *buf) {
-    uv_args_t *uv = (uv_args_t *)strm->uv_args;
-    routine_t *co = uv->context;
-
-    if (nread < 0 && nread != UV_EOF)
-        uv_log_error(nread);
-
-    coro_await_finish(co, ((nread > 0) ? buf->base : nullptr), nread, (nread < 0));
 }
 
 static void udp_send_cb(uv_udp_send_t *req, int status) {
@@ -596,8 +604,8 @@ static void fs_cb(uv_fs_t *req) {
     uv_fs_type fs_type = UV_FS_CUSTOM;
     bool override = false;
 
-    if (result < 0) {
-        asio_abort(nullptr, result, co);
+	if (result < 0 && fs->fs_type != UV_FS_ACCESS) {
+		asio_abort(nullptr, result, co);
     } else {
         fs_ptr = uv_fs_get_ptr(req);
         fs_type = uv_fs_get_type(req);
@@ -670,9 +678,9 @@ static void fs_cb(uv_fs_t *req) {
     coro_await_finish(co, data, result, !override);
     if (fs_type != UV_FS_SCANDIR) {
         if (fs_type == UV_FS_READ)
-            RAII_FREE(fs->bufs.base);
+			RAII_FREE(fs->bufs.base);
 
-        fs_cleanup(req);
+		fs_cleanup(req);
     }
 }
 
@@ -812,16 +820,20 @@ static void_t uv_init(params_t uv_args) {
     int length, r, result = UV_EBADF;
     uv_handle_t *stream = args[0].object;
     char name[SCRAPE_SIZE * 2] = nil;
+    routine_t *co = uv->context;
     uv->context = coro_active();
     if (uv->is_request) {
         uv_req_t *req;
         switch (uv->req_type) {
             case UV_WRITE:
                 req = (uv_req_t *)&uv->write_req;
-                if (uv->bind_type == UV_TLS) {
-                    uv->tls->data = (uv_tcp_t *)stream;
-                    uv->tls->uv_args = (void_t)uv;
-                    result = uv_tls_write(uv->tls, &uv->bufs, tls_write_cb);
+				if (uv->bind_type == UV_TLS) {
+					uv->context = co;
+					uv->args[1].object = co;
+					uv->tls->data = (uv_tcp_t *)stream;
+					uv->tls->uv_args = (void_t)uv;
+					if (uv_is_writable(streamer(stream)) && !uv_is_closing(stream))
+						result = uv_tls_write(uv->tls, &uv->bufs, tls_write_cb);
                 } else {
                     result = uv_write((uv_write_t *)req, streamer(stream), &uv->bufs, 1, write_cb);
                 }
@@ -882,11 +894,10 @@ static void_t uv_init(params_t uv_args) {
                 break;
         }
 
-        if (uv->bind_type == UV_TLS)
+		if (!result && uv->req_type == UV_CONNECT && uv->bind_type == UV_TLS)
             uv->ctx.uv_args = (void_t)uv;
         else if (!result)
             uv_req_set_data(req, (void_t)uv);
-
     } else {
         if (uv->bind_type != UV_TLS)
             uv_handle_set_data(stream, (void_t)uv);
@@ -940,13 +951,7 @@ static void_t uv_init(params_t uv_args) {
                 }
                 break;
             case UV_STREAM:
-                if (uv->bind_type == UV_TLS) {
-                    uv->tls->data = (void_t)stream;
-                    uv->tls->uv_args = (void_t)uv;
-                    result = uv_tls_read(uv->tls, tls_read_cb);
-                } else {
-                    result = uv_read_start((uv_stream_t *)stream, alloc_cb, read_cb);
-                }
+				result = uv_read_start((uv_stream_t *)stream, alloc_cb, read_cb);
                 break;
             case UV_TIMER:
                 defer((func_t)asio_closer, uv);
@@ -968,8 +973,9 @@ static void_t uv_init(params_t uv_args) {
     }
 
     if (result) {
-        uv_log_error(result);
-        coro_await_canceled(uv->context, result);
+		uv_log_error(result);
+		if (is_coroutine(uv->context))
+			coro_await_canceled(uv->context, result);
     }
 
     return 0;
@@ -1238,6 +1244,10 @@ RAII_INLINE size_t file_size(string_t path) {
     return 0;
 }
 
+RAII_INLINE bool fs_touch(string_t filepath) {
+	return fs_writefile(filepath, "") == 0;
+}
+
 string fs_read(uv_file fd, int64_t offset) {
     uv_stat_t *stat = fs_fstat(fd);
     uv_args_t *uv_args = uv_arguments(2, false);
@@ -1282,9 +1292,9 @@ string fs_readfile(string_t path) {
 }
 
 int fs_writefile(string_t path, string_t text) {
-    int status = 0;
-    uv_file fd = fs_open(path, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd > 0) {
+	int status = 0;
+	uv_file fd = fs_open(path, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+	if (fd > 0) {
         if ((status = (int)simd_strlen(text)) > 0)
             status = fs_write(fd, text, -1);
 
@@ -1446,15 +1456,11 @@ static void_t stream_client(params_t args) {
     stream_cb handlerFunc = (stream_cb)args[1].func;
     uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(client));
 
-    if (uv->bind_type == RAII_SCHEME_TLS) {
-        uv_args_t *tls_args = uv_arguments(1, true);
-        tls_args->tls = uv->tls;
-        tls_args->bind_type = uv->bind_type;
-        $append(tls_args->args, client);
-        uv_handle_set_data(handler(client), (void_t)tls_args);
-        tls_args->tls->data = (uv_tcp_t *)client;
-        defer(tls_close_free, uv->tls);
-    } else {
+	if (uv->bind_type == UV_TLS) {
+		uv_handle_set_data(handler(client), (void_t)uv->tls->uv_args);
+		defer((func_t)uv_arguments_free, uv->tls->uv_args);
+		defer(tls_close_free, uv->tls);
+	} else {
         uv_handle_set_data(handler(client), nullptr);
         defer(uv_close_free, client);
     }
@@ -1473,10 +1479,13 @@ int stream_write(uv_stream_t *handle, string_t text) {
         return RAII_ERR;
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_defined(uv_args) || is_tls(handle)) {
+	if (is_defined(uv_args) || is_tls(handle)) {
+		if ((!uv_is_writable(handle) || uv_is_closing(handler(handle))))
+			return UV_EBADF;
+
         uv_args->args[0].object = handle;
-    } else {
-        uv_args = uv_arguments(1, true);
+	} else {
+		uv_args = uv_arguments(1, true);
         $append(uv_args->args, handle);
         uv_handle_set_data(handler(handle), (void_t)uv_args);
     }
@@ -1570,17 +1579,78 @@ static void_t stream_yield(params_t args) {
     return 0;
 }
 
+static void_t tls_yield(params_t args) {
+	uv_args_t *uv = args->object;
+	uv_stream_t *stream = uv->args[0].object;
+	routine_t *co = coro_active();
+
+	uv->context = co;
+	uv->tls->data = stream;
+	uv->tls->uv_args = uv;
+	uv_handle_set_data(handler(stream), (void_t)uv);
+	yield();
+	while (!coro_terminated(co)) {
+		if (!is_empty(uv->buffer))
+			yielding(uv->buffer);
+		else
+			coro_yield_info();
+	}
+
+	uv_read_stop(stream);
+	return 0;
+}
+
+uv_tls_t *tls_handle(uv_stream_t *stream) {
+	void_t check = uv_handle_get_data(handler(stream));
+	return is_defined(check) ? ((uv_args_t*)check)->tls : (uv_tls_t *)check;
+}
+
+void tls_yielding(uv_tls_t *handle, ssize_t nread, bool is_err) {
+	uv_args_t *uv = (uv_args_t *)handle->uv_args;
+	routine_t *co = uv->context;
+
+	if (is_err) {
+		coro_await_erred(co, nread);
+		coro_await_exit(co, nullptr, nread, false);
+	} else {
+
+	}
+}
+
+void tls_generator_set(uv_tls_t *handle) {
+	uv_args_t *tls_args, *uv_args = (uv_args_t *)handle->uv_args;
+
+	tls_args = uv_arguments(1, false);
+	tls_args->tls = handle;
+	tls_args->bind_type = UV_TLS;
+	tls_args->is_generator = true;
+	tls_args->buffer = nullptr;
+	tls_args->context = uv_args->context;
+	tls_args->tls->data = (void_t)handle->tcp_hdl;
+	tls_args->tls->uv_args = (void_t)tls_args;
+	$append(tls_args->args, tls_args->tls->data);
+	$append(tls_args->args, uv_args);
+	tls_args->yield = generator(tls_yield, 1, tls_args);
+
+	uv_args->tls = tls_args->tls;
+	uv_args->tls->data = tls_args->tls->data;
+	uv_args->tls->uv_args = (void_t)tls_args;
+}
+
 static string stream_get(uv_stream_t *handle) {
     if (is_empty(handle))
         return nullptr;
 
     generator_t gen = nullptr;
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_defined(uv_args) && uv_args->is_generator) {
-        uv_args->args[0].object = handle;
-        gen = get_coro_generator(uv_args->context);
+	if (is_defined(uv_args) && uv_args->is_generator) {
+		uv_args->args[0].object = handle;
+		if (uv_args->bind_type == UV_TLS)
+			gen = uv_args->yield;
+		else
+			gen = get_coro_generator(uv_args->context);
     } else {
-        if (is_defined(uv_args)) {
+		if (is_defined(uv_args)) {
             uv_args->args[0].object = handle;
         } else if (is_empty(uv_args)) {
             uv_args = uv_arguments(1, false);
@@ -1590,9 +1660,9 @@ static string stream_get(uv_stream_t *handle) {
             return nullptr;
         }
 
-        uv_args->is_generator = true;
-        gen = generator(stream_yield, 1, uv_args);
-        uv_handle_set_data(handler(handle), (void_t)uv_args);
+		uv_args->is_generator = true;
+		gen = generator(stream_yield, 1, uv_args);
+		uv_handle_set_data(handler(handle), (void_t)uv_args);
     }
 
     return yield_for(gen).char_ptr;
@@ -1631,9 +1701,6 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
     uv_args_t *uv_args = uv_arguments(3, true);
     void_t addr_set = nullptr;
     void_t handle = nullptr;
-    string name = CERTIFICATE;
-    char crt[UV_MAXHOSTNAMESIZE + 4];
-    char key[UV_MAXHOSTNAMESIZE + 4];
     int r = 0;
 
     if (scheme == RAII_SCHEME_PIPE || scheme == UV_NAMED_PIPE)
@@ -1654,16 +1721,7 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
             break;
         case UV_TLS:
             uv_args->bind_type = UV_TLS;
-            if (is_str_eq(name, "localhost"))
-                name = (string)asio_hostname();
-
-            if (!(r = snprintf(crt, sizeof(crt), "%s.crt", name)))
-                RAII_LOG("Invalid hostname");
-
-            if (!(r = snprintf(key, sizeof(key), "%s.key", name)))
-                RAII_LOG("Invalid hostname");
-
-            evt_ctx_init_ex(&uv_args->ctx, crt, key);
+            evt_ctx_init_ex(&uv_args->ctx, cert_file(), pkey_file());
             evt_ctx_set_nio(&uv_args->ctx, nullptr, uv_tls_writer);
             defer((func_t)evt_ctx_free, &uv_args->ctx);
             handle = tls_tcp_create(&uv_args->ctx);
@@ -1719,12 +1777,9 @@ uv_stream_t *stream_bind(string_t address, int flags) {
 uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, int flags) {
     void_t addr_set = nullptr, handle;
     int r = 0;
-    string name = CERTIFICATE;
-    char crt[UV_MAXHOSTNAMESIZE + 4];
-    char key[UV_MAXHOSTNAMESIZE + 4];
+	uv_args_t *uv_args = uv_arguments(5, false);
 
-    uv_args_t *uv_args = uv_arguments(5, false);
-    defer_recover((func_t)uv_catch_error, uv_args);
+	defer_recover((func_t)uv_catch_error, uv_args);
     if (scheme == RAII_SCHEME_PIPE)
         addr_set = str_concat(2, SYS_PIPE, address);
     else
@@ -1742,16 +1797,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
                 defer((func_t)fs_remove_pipe, uv_args);
             break;
         case UV_TLS:
-            if (is_str_eq(name, "localhost"))
-                name = (string)asio_hostname();
-
-            if (!(r = snprintf(crt, sizeof(crt), "%s.crt", name)))
-                RAII_LOG("Invalid hostname");
-
-            if (!(r = snprintf(key, sizeof(key), "%s.key", name)))
-                RAII_LOG("Invalid hostname");
-
-            evt_ctx_init_ex(&uv_args->ctx, crt, key);
+			evt_ctx_init_ex(&uv_args->ctx, cert_file(), pkey_file());
             evt_ctx_set_nio(&uv_args->ctx, nullptr, uv_tls_writer);
             defer((func_t)evt_ctx_free, &uv_args->ctx);
             handle = tls_tcp_create(&uv_args->ctx);
@@ -2645,6 +2691,10 @@ RAII_INLINE bool is_addrinfo(void_t self) {
     return is_type(self, (raii_type)ASIO_DNS);
 }
 
+RAII_INLINE bool is_addressable(void_t self) {
+	return ((ptrdiff_t)self > 0x20000000);
+}
+
 string_t asio_uname(void) {
     if (is_str_empty((string_t)asio_powered_by)) {
         char scrape[SCRAPE_SIZE];
@@ -2664,7 +2714,7 @@ string_t asio_uname(void) {
 }
 
 string_t asio_hostname(void) {
-    if (is_str_empty((string_t)asio_host)) {
+	if (is_str_empty((string_t)asio_host)) {
         size_t len = sizeof(asio_host);
         uv_os_gethostname(asio_host, &len);
     }
@@ -2769,9 +2819,15 @@ u32 delay(u32 ms) {
 }
 
 main(int argc, char **argv) {
-    uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
-    RAII_INFO("%s, %s\n\n", asio_uname(), asio_hostname());
-    coro_interrupt_setup((call_interrupter_t)uv_run, uv_create_loop, asio_shutdown);
-    coro_stacksize_set(Kb(64));
-    return coro_start((coro_sys_func)uv_main, argc, argv, 0);
+	uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
+	RAII_INFO("%s, %s\n\n", asio_uname(), asio_hostname());
+	coro_interrupt_setup((call_interrupter_t)uv_run, uv_create_loop, asio_shutdown);
+	coro_stacksize_set(Kb(64));
+	ASIO_ssl_init();
+	CRYPTO_set_mem_functions(
+		(void_t(*)(long unsigned int, string_t, int))rp_malloc,
+		(void_t(*)(void_t, long unsigned int, string_t, int))rp_realloc,
+		(void(*)(void_t, string_t, int))rpfree);
+
+	return coro_start((coro_sys_func)uv_main, argc, argv, 0);
 }

@@ -5,14 +5,10 @@
 // Distributed under the MIT License (See accompanying file LICENSE)
 //
 //////////////////////////////////////////////////////////////////////////
-//
+// See https://github.com/deleisha/evt-tls
 //%///////////////////////////////////////////////////////////////////////////
 
-#include <string.h>
-#include <stdint.h>
-#include <assert.h>
-#include "evt_tls.h"
-#include <rpmalloc.h>
+#include "asio.h"
 
 void echo_read(uv_tls_t *strm, ssize_t nrd, const uv_buf_t *bfr)
 {
@@ -69,31 +65,17 @@ void on_connect(uv_connect_t *req, int status)
     uv_tls_connect(sclient, on_tls_handshake);
 }
 
-int main()
-{
-    uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
-    uv_loop_t *loop = uv_default_loop();
+int uv_main(int argc, char **argv) {
+	yield();
+	uv_loop_t *loop = asio_loop();
     //free on uv_close_cb via uv_tls_close call
     uv_tcp_t *client = malloc(sizeof *client);
     uv_tcp_init(loop, client);
-    int port = 8000;
+    int port = 7000;
 
     evt_ctx_t ctx;
 
-    char name[256];
-    char crt[256];
-    char key[256];
-    size_t len = sizeof(name);
-    uv_os_gethostname(name, &len);
-    int r = snprintf(key, sizeof(key), "%s.key", name);
-    if (r == 0)
-        puts("Invalid hostname");
-
-    r = snprintf(crt, sizeof(crt), "%s.crt", name);
-    if (r == 0)
-        puts("Invalid hostname");
-
-    evt_ctx_init_ex(&ctx, crt, key);
+	evt_ctx_init_ex(&ctx, cert_file(), pkey_file());
     evt_ctx_set_nio(&ctx, NULL, uv_tls_writer);
 
     struct sockaddr_in conn_addr;
@@ -101,9 +83,10 @@ int main()
 
     uv_connect_t req;
     req.data = &ctx;
-    uv_tcp_connect(&req, client,(const struct sockaddr*)&conn_addr,on_connect);
+    uv_tcp_connect(&req, client,(const struct sockaddr*)&conn_addr, on_connect);
 
     uv_run(loop, UV_RUN_DEFAULT);
-    evt_ctx_free(&ctx);
-    return 0;
+	evt_ctx_free(&ctx);
+
+	return 0;
 }

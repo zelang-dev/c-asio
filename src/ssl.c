@@ -18,6 +18,11 @@
 #endif
 
 static char default_ssl_conf_filename[UV_MAXHOSTNAMESIZE];
+static char asio_directory[UV_MAXHOSTNAMESIZE] = nil;
+static char asio_cert[UV_MAXHOSTNAMESIZE + 4] = nil;
+static char asio_csr[UV_MAXHOSTNAMESIZE + 4] = nil;
+static char asio_pkey[UV_MAXHOSTNAMESIZE + 4] = nil;
+static char asio_self_touch[UV_MAXHOSTNAMESIZE + 6] = nil;
 struct x509_request {
     CONF *global_config;	/* Global SSL config */
     CONF *req_config;		/* SSL config for this request */
@@ -44,6 +49,7 @@ enum asio_ssl_key_type {
     OPENSSL_KEYTYPE_RSA,
     OPENSSL_KEYTYPE_DSA,
     OPENSSL_KEYTYPE_DH,
+    OPENSSL_KEYTYPE_EC,
     OPENSSL_KEYTYPE_DEFAULT = OPENSSL_KEYTYPE_RSA
 };
 
@@ -81,12 +87,18 @@ struct x509_request_object {
     X509_REQ *csr;
 };
 
-#define ASIO_SSL_CONFIG_SYNTAX(var) \
+typedef enum {
+	ssl_generate_pkey = ca_file + 1,
+	ssl_export_file,
+	ssl_create_self,
+	ssl_worker
+} thrd_worker_types;
+
+#define ASIO_SSL_CONFIG_SYNTAX(var)	\
     if (req->var && config_check(#var, req->config_filename, req->var, req->req_config) == false) return false;
 
-static const EVP_CIPHER *get_cipher(long algo) { /* {{{ */
+static const EVP_CIPHER *get_cipher(long algo) {
     switch (algo) {
-#ifndef OPENSSL_NO_RC2
         case CIPHER_RC2_40:
             return EVP_rc2_40_cbc();
             break;
@@ -96,18 +108,12 @@ static const EVP_CIPHER *get_cipher(long algo) { /* {{{ */
         case CIPHER_RC2_128:
             return EVP_rc2_cbc();
             break;
-#endif
-
-#ifndef OPENSSL_NO_DES
         case CIPHER_DES:
             return EVP_des_cbc();
             break;
         case CIPHER_3DES:
             return EVP_des_ede3_cbc();
             break;
-#endif
-
-#ifndef OPENSSL_NO_AES
         case CIPHER_AES_128_CBC:
             return EVP_aes_128_cbc();
             break;
@@ -117,7 +123,6 @@ static const EVP_CIPHER *get_cipher(long algo) { /* {{{ */
         case CIPHER_AES_256_CBC:
             return EVP_aes_256_cbc();
             break;
-#endif
         default:
             return nullptr;
             break;
@@ -252,6 +257,16 @@ static bool parse_config(struct x509_request *req, hash_t *optional_args) {
     }
 
     ASIO_SSL_CONFIG_SYNTAX(extensions_section);
+	/* set the ec group curve name */
+	req->curve_name = NID_undef;
+	if (optional_args && (item = hash_get(optional_args, "curve_name")) != nullptr) {
+        req->curve_name = OBJ_sn2nid(raii_value(item).char_ptr);
+        if (req->curve_name == NID_undef) {
+            RAII_INFO("Unknown elliptic curve (short) name %s", raii_value(item).char_ptr);
+            return false;
+		}
+	}
+
     /* set the string mask */
     str = conf_string(req->req_config, req->section_name, "string_mask");
     if (str != nullptr && !ASN1_STRING_set_default_mask_asc(str)) {
@@ -336,32 +351,30 @@ static int write_rand_file(const char *file, int egdsocket, int seeded) {
     return true;
 }
 
-static int asio_pkey_type(int key_type) {
+static int evp_pkey_type(int key_type) {
     switch (key_type) {
         case OPENSSL_KEYTYPE_RSA:
             return EVP_PKEY_RSA;
-#if !defined(NO_DSA)
         case OPENSSL_KEYTYPE_DSA:
             return EVP_PKEY_DSA;
-#endif
-#if !defined(NO_DH)
         case OPENSSL_KEYTYPE_DH:
             return EVP_PKEY_DH;
-#endif
+        case OPENSSL_KEYTYPE_EC:
+          return EVP_PKEY_EC;
         default:
             return -1;
     }
 }
 
 #define PKEY_MIN_LENGTH		384
-static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
+static EVP_PKEY *gen_private_key(struct x509_request *req) {
     if (req->priv_key_bits < PKEY_MIN_LENGTH) {
         RAII_INFO("Private key length must be at least %d bits, configured to %d",
                   PKEY_MIN_LENGTH, req->priv_key_bits);
         return nullptr;
     }
 
-    int type = asio_pkey_type(req->priv_key_type);
+    int type = req->priv_key_type;
     if (type < 0) {
         RAII_LOG("Unsupported private key type");
         return nullptr;
@@ -387,22 +400,31 @@ static EVP_PKEY *asio_generate_private_key(struct x509_request *req) {
         }
 
         switch (type) {
-#if !defined(NO_DSA)
             case EVP_PKEY_DSA:
                 if (EVP_PKEY_CTX_set_dsa_paramgen_bits(ctx, req->priv_key_bits) <= 0) {
                     ASIO_ssl_error();
                     goto cleanup;
                 }
                 break;
-#endif
-#if !defined(NO_DH)
             case EVP_PKEY_DH:
                 if (EVP_PKEY_CTX_set_dh_paramgen_prime_len(ctx, req->priv_key_bits) <= 0) {
                     ASIO_ssl_error();
                     goto cleanup;
                 }
                 break;
-#endif
+            case EVP_PKEY_EC:
+              if (req->curve_name == NID_undef) {
+                RAII_LOG("Missing configuration value: \"curve_name\" not set");
+                goto cleanup;
+              }
+              if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(
+                    ctx, req->curve_name) <= 0 ||
+                  EVP_PKEY_CTX_set_ec_param_enc(ctx, OPENSSL_EC_NAMED_CURVE) <=
+                    0) {
+                ASIO_ssl_error();
+                goto cleanup;
+              }
+              break;
             default:
                 break;
         }
@@ -455,7 +477,7 @@ static void add_bn_to_array(map_t ary, const BIGNUM *bn, const char *name) {
 
 static bool make_csr_req(struct x509_request *req, X509_REQ *x, u32 num_pairs, va_list ap_copy) {
     u32 i;
-    csr_types k;
+    csr_option_types k;
     string v = nullptr, dn_txt[] = {"C", "ST", "L", "O", "OU", "CN"};
     X509_NAME *name = nullptr;
     struct stack_st_X509_EXTENSION *exts = nullptr;
@@ -487,7 +509,7 @@ static bool make_csr_req(struct x509_request *req, X509_REQ *x, u32 num_pairs, v
 
             va_copy(ap, ap_copy);
             for (i = 0; i < num_pairs; i++) {
-                k = va_arg(ap, csr_types);
+                k = va_arg(ap, csr_option_types);
                 v = va_arg(ap, string);
                 switch (k) {
                     case dn_c:
@@ -525,13 +547,13 @@ static bool make_csr_req(struct x509_request *req, X509_REQ *x, u32 num_pairs, v
  // Christian Heimes
 static int openssl_x509v3_subjectAltName(BIO *bio, X509_EXTENSION *extension) {
     GENERAL_NAMES *names;
-    const X509V3_EXT_METHOD *method = NULL;
+    const X509V3_EXT_METHOD *method = nullptr;
     ASN1_OCTET_STRING *extension_data;
     long i, length, num;
     const unsigned char *p;
 
     method = X509V3_EXT_get(extension);
-    if (method == NULL) {
+    if (method == nullptr) {
         return -1;
     }
 
@@ -539,13 +561,13 @@ static int openssl_x509v3_subjectAltName(BIO *bio, X509_EXTENSION *extension) {
     p = extension_data->data;
     length = extension_data->length;
     if (method->it) {
-        names = (GENERAL_NAMES *)(ASN1_item_d2i(NULL, &p, length,
+        names = (GENERAL_NAMES *)(ASN1_item_d2i(nullptr, &p, length,
                                                 ASN1_ITEM_ptr(method->it)));
     } else {
-        names = (GENERAL_NAMES *)(method->d2i(NULL, &p, length));
+        names = (GENERAL_NAMES *)(method->d2i(nullptr, &p, length));
     }
-    if (names == NULL) {
-        php_openssl_store_errors();
+    if (names == nullptr) {
+        ASIO_ssl_error();
         return -1;
     }
 
@@ -600,24 +622,24 @@ static time_t php_openssl_asn1_time_to_time_t(ASN1_UTCTIME * timestr)
     size_t timestr_len;
 
     if (ASN1_STRING_type(timestr) != V_ASN1_UTCTIME && ASN1_STRING_type(timestr) != V_ASN1_GENERALIZEDTIME) {
-        php_error_docref(NULL, E_WARNING, "Illegal ASN1 data type for timestamp");
+        RAII_LOG("Illegal ASN1 data type for timestamp");
         return (time_t)-1;
     }
 
     timestr_len = (size_t)ASN1_STRING_length(timestr);
 
     if (timestr_len != strlen((const char *)ASN1_STRING_get0_data(timestr))) {
-        php_error_docref(NULL, E_WARNING, "Illegal length in timestamp");
+        RAII_LOG("Illegal length in timestamp");
         return (time_t)-1;
     }
 
     if (timestr_len < 13 && timestr_len != 11) {
-        php_error_docref(NULL, E_WARNING, "Unable to parse time string %s correctly", timestr->data);
+        RAII_LOG("Unable to parse time string %s correctly", timestr->data);
         return (time_t)-1;
     }
 
     if (ASN1_STRING_type(timestr) == V_ASN1_GENERALIZEDTIME && timestr_len < 15) {
-        php_error_docref(NULL, E_WARNING, "Unable to parse time string %s correctly", timestr->data);
+        RAII_LOG("Unable to parse time string %s correctly", timestr->data);
         return (time_t)-1;
     }
 
@@ -686,19 +708,19 @@ static void php_openssl_add_assoc_name_entry(zval *val, char *key, X509_NAME *na
     char *sname;
     int nid;
     X509_NAME_ENTRY *ne;
-    ASN1_STRING *str = NULL;
+    ASN1_STRING *str = nullptr;
     ASN1_OBJECT *obj;
 
-    if (key != NULL) {
+    if (key != nullptr) {
         array_init(&subitem);
     } else {
         ZVAL_COPY_VALUE(&subitem, val);
     }
 
     for (i = 0; i < X509_NAME_entry_count(name); i++) {
-        const unsigned char *to_add = NULL;
+        const unsigned char *to_add = nullptr;
         int to_add_len = 0;
-        unsigned char *to_add_buf = NULL;
+        unsigned char *to_add_buf = nullptr;
 
         ne = X509_NAME_get_entry(name, i);
         obj = X509_NAME_ENTRY_get_object(ne);
@@ -720,7 +742,7 @@ static void php_openssl_add_assoc_name_entry(zval *val, char *key, X509_NAME *na
         }
 
         if (to_add_len != -1) {
-            if ((data = zend_hash_str_find(Z_ARRVAL(subitem), sname, strlen(sname))) != NULL) {
+            if ((data = zend_hash_str_find(Z_ARRVAL(subitem), sname, strlen(sname))) != nullptr) {
                 if (Z_TYPE_P(data) == IS_ARRAY) {
                     add_next_index_stringl(data, (const char *)to_add, to_add_len);
                 } else if (Z_TYPE_P(data) == IS_STRING) {
@@ -733,177 +755,178 @@ static void php_openssl_add_assoc_name_entry(zval *val, char *key, X509_NAME *na
                 add_assoc_stringl(&subitem, sname, (char *)to_add, to_add_len);
             }
         } else {
-            php_openssl_store_errors();
+            ASIO_ssl_error();
         }
 
-        if (to_add_buf != NULL) {
+        if (to_add_buf != nullptr) {
             OPENSSL_free(to_add_buf);
         }
     }
 
-    if (key != NULL) {
+    if (key != nullptr) {
         zend_hash_str_update(Z_ARRVAL_P(val), key, strlen(key), &subitem);
     }
 }
 */
 
-static void_t x509_thread(args_t args) {
-    struct x509_request x509_req;
-    string name = nullptr, passphrase = nullptr;
-    EVP_PKEY *pkey = nullptr;
-    X509 *x509 = nullptr;
-    X509_REQ *csr = nullptr;
-    BIO *x509file = nullptr, *pOut = nullptr, *bio_out = nullptr;
-    hash_t *items = nullptr;
-    size_t passphrase_len = 0, filename_len = 0;
-    const EVP_CIPHER *cipher;
-    int pem_write = 0;
+static void_t thrd_worker_thread(args_t args) {
+	thrd_worker_types preform = args[0].integer;
+	switch (preform) {
+		case ssl_generate_pkey: {
+			EVP_PKEY *pkey = args[1].object;
+			int keylength = args[2].integer;
+			int pkey_id = args[3].integer;
+			EVP_PKEY_CTX *ctx = nullptr;
+			switch (pkey_id) {
+				case EVP_PKEY_RSA:
+					if (is_empty(ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr))
+					|| (EVP_PKEY_keygen_init(ctx) <= 0)
+					|| (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keylength) <= 0)
+					|| (EVP_PKEY_keygen(ctx, &pkey) <= 0)) {
+						ASIO_ssl_error();
+						return nullptr;
+					}
+					break;
+				default:
+					return nullptr;
+			}
+			/* The key has been generated, return it. */
+			return $(true);
+		}
+		case ssl_export_file: {
+			struct x509_request x509_req;
+			string name = nullptr, passphrase = nullptr;
+			EVP_PKEY *pkey = nullptr;
+			X509 *x509 = nullptr;
+			X509_REQ *csr = nullptr;
+			BIO *x509file = nullptr, *pOut = nullptr, *bio_out = nullptr;
+			hash_t *items = nullptr;
+			size_t passphrase_len = 0, filename_len = 0;
+			const EVP_CIPHER *cipher;
+			int pem_write = 0;
 
-    /* Open the PEM files for writing to disk. */
-    char req[UV_MAXHOSTNAMESIZE + 4];
-    char key[UV_MAXHOSTNAMESIZE + 4];
-    char crt[UV_MAXHOSTNAMESIZE + 4];
-    int r = 0;
+			/* Open the PEM files for writing to disk. */
+			char req[UV_MAXHOSTNAMESIZE + 4];
+			char key[UV_MAXHOSTNAMESIZE + 4];
+			char crt[UV_MAXHOSTNAMESIZE + 4];
+			int r = 0;
+			if (is_cert_req(args[1].object)) {
+				csr = args[1].object;
+				name = args[2].char_ptr;
+				r = snprintf(req, sizeof(req), "%s.csr", name);
+				bio_out = BIO_new_file(req, _BIO_MODE_W(PKCS7_BINARY));
+				if (bio_out != nullptr) {
+					if (!X509_REQ_print(bio_out, csr))
+						ASIO_ssl_error();
 
-    if ($size(args) == 2) {
-        if (is_ssl_req(args[0].object)) {
-            csr = args[0].object;
-            name = args[1].char_ptr;
-            r = snprintf(req, sizeof(req), "%s.csr", name);
-            bio_out = BIO_new_file(req, _BIO_MODE_W(PKCS7_BINARY));
-            if (bio_out != nullptr) {
-                if (!X509_REQ_print(bio_out, csr))
-                    ASIO_ssl_error();
+					if (!PEM_write_bio_X509_REQ(bio_out, csr)) {
+						ASIO_ssl_error();
+						RAII_INFO("Error writing PEM to file %s", req);
+						BIO_free(bio_out);
+						return nullptr;
+					}
+					BIO_free(bio_out);
+				} else {
+					ASIO_ssl_error();
+					RAII_INFO("Error opening file %s", req);
+					return nullptr;
+				}
+			} else if (is_cert(args[1].object)) {
+				x509 = args[1].object;
+				name = args[2].char_ptr;
+				r = snprintf(crt, sizeof(req), "%s.crt", name);
+				bio_out = BIO_new_file(crt, _BIO_MODE_W(PKCS7_BINARY));
+				if (bio_out) {
+					if (!X509_print(bio_out, x509))
+						ASIO_ssl_error();
 
-                if (!PEM_write_bio_X509_REQ(bio_out, csr)) {
-                    ASIO_ssl_error();
-                    RAII_INFO("Error writing PEM to file %s", req);
-                    BIO_free(bio_out);
-                    return nullptr;
-                }
-                BIO_free(bio_out);
-            } else {
-                ASIO_ssl_error();
-                RAII_INFO("Error opening file %s", req);
-                return nullptr;
-            }
-        } else if (is_ssl_cert(args[0].object)) {
-            x509 = args[0].object;
-            name = args[1].char_ptr;
-            r = snprintf(crt, sizeof(req), "%s.crt", name);
-            bio_out = BIO_new_file(crt, _BIO_MODE_W(PKCS7_BINARY));
-            if (bio_out) {
-                if (!X509_print(bio_out, x509))
-                    ASIO_ssl_error();
+					if (!PEM_write_bio_X509(bio_out, x509))
+						ASIO_ssl_error();
+				} else {
+					ASIO_ssl_error();
+					RAII_INFO("Error opening file %s", crt);
+					return nullptr;
+				}
 
-                if (!PEM_write_bio_X509(bio_out, x509))
-                    ASIO_ssl_error();
-            } else {
-                ASIO_ssl_error();
-                RAII_INFO("Error opening file %s", crt);
-                return nullptr;
-            }
+				if (!BIO_free(bio_out)) {
+					ASIO_ssl_error();
+				}
+			} else if (is_pkey(args[1].object)) {
+				pkey = args[1].object;
+				name = args[2].char_ptr;
+				memset(&x509_req, 0, sizeof(*&x509_req));
+				r = snprintf(key, sizeof(req), "%s.key", name);
+				if (parse_config(&x509_req, (items = hash_create_ex(128)))) {
+					bio_out = BIO_new_file(key, _BIO_MODE_W(PKCS7_BINARY));
+					if (bio_out == nullptr) {
+						ASIO_ssl_error();
+						goto clean_exit;
+					}
 
-            if (!BIO_free(bio_out)) {
-                ASIO_ssl_error();
-            }
-        } else if (is_ssl_pkey(args[0].object)) {
-            pkey = args[0].object;
-            name = args[1].char_ptr;
-            memset(&x509_req, 0, sizeof(*&x509_req));
-            r = snprintf(key, sizeof(req), "%s.key", name);
-            if (parse_config(&x509_req, (items = hash_create_ex(128)))) {
-                bio_out = BIO_new_file(key, _BIO_MODE_W(PKCS7_BINARY));
-                if (bio_out == NULL) {
-                    ASIO_ssl_error();
-                    goto clean_exit;
-                }
+					if (passphrase && x509_req.priv_key_encrypt) {
+						if (x509_req.priv_key_encrypt_cipher) {
+							cipher = x509_req.priv_key_encrypt_cipher;
+						} else {
+							cipher = (EVP_CIPHER *)EVP_des_ede3_cbc();
+						}
+					} else {
+						cipher = nullptr;
+					}
 
-                if (passphrase && x509_req.priv_key_encrypt) {
-                    if (x509_req.priv_key_encrypt_cipher) {
-                        cipher = x509_req.priv_key_encrypt_cipher;
-                    } else {
-                        cipher = (EVP_CIPHER *)EVP_des_ede3_cbc();
-                    }
-                } else {
-                    cipher = NULL;
-                }
+					pem_write = PEM_write_bio_PrivateKey(
+						bio_out, pkey, cipher,
+						(unsigned char *)passphrase, (int)passphrase_len, nullptr, nullptr);
+					if (!pem_write) {
+						ASIO_ssl_error();
+					}
+				}
 
-                pem_write = PEM_write_bio_PrivateKey(
-                    bio_out, pkey, cipher,
-                    (unsigned char *)passphrase, (int)passphrase_len, NULL, NULL);
-                if (!pem_write) {
-                    ASIO_ssl_error();
-                }
-            }
+			clean_exit:
+				dispose_config(&x509_req);
+				BIO_free(bio_out);
+				if (!pem_write)
+					return nullptr;
+			}
+			break;
+		}
+		case ssl_create_self: {
+			EVP_PKEY *pkey = args[1].object;
+			X509 *x509 = args[2].object;
+			BIO *x509file = nullptr, *pOut = nullptr;
+			pOut = BIO_new_file(pkey_file(), _BIO_MODE_W(PKCS7_BINARY));
+			if (!pOut) {
+				RAII_INFO("Unable to open \"%s\" for writing.\n", pkey_file());
+				return nullptr;
+			}
 
-        clean_exit:
-            dispose_config(&x509_req);
-            BIO_free(bio_out);
-            if (!pem_write)
-                return nullptr;
-        }
-    } else {
-        pkey = args[0].object;
-        x509 = args[1].object;
-        name = args[2].char_ptr;
-        r = snprintf(key, sizeof(key), "%s.key", name);
-        pOut = BIO_new_file(key, _BIO_MODE_W(PKCS7_BINARY));
-        if (!pOut) {
-            RAII_INFO("Unable to open \"%s\" for writing.\n", key);
-            return nullptr;
-        }
+			/* Write the key to disk. */
+			if (!PEM_write_bio_PrivateKey(pOut, pkey, nullptr, nullptr, 0, nullptr, nullptr)) {
+				RAII_LOG("Unable to write private key to disk.");
+				BIO_free_all(pOut);
+				return nullptr;
+			}
+			BIO_free_all(pOut);
 
-        /* Write the key to disk. */
-        if (!PEM_write_bio_PrivateKey(pOut, pkey, nullptr, nullptr, 0, nullptr, nullptr)) {
-            RAII_LOG("Unable to write private key to disk.");
-            BIO_free_all(pOut);
-            return nullptr;
-        }
-        BIO_free_all(pOut);
+			/* Open the PEM file for writing the certificate to disk. */
+			x509file = BIO_new_file(cert_file(), _BIO_MODE_W(PKCS7_BINARY));
+			if (!x509file) {
+				RAII_INFO("Unable to open \"%s\" for writing.\n", cert_file());
+				return nullptr;
+			}
 
-        /* Open the PEM file for writing the certificate to disk. */
-        r = snprintf(crt, sizeof(crt), "%s.crt", name);
-        x509file = BIO_new_file(crt, _BIO_MODE_W(PKCS7_BINARY));
-        if (!x509file) {
-            RAII_INFO("Unable to open \"%s\" for writing.\n", crt);
-            return nullptr;
-        }
+			/* Write the certificate to disk. */
+			if (!PEM_write_bio_X509(x509file, x509)) {
+				RAII_LOG("Unable to write certificate to disk.");
+				BIO_free_all(x509file);
+				return nullptr;
+			}
+			BIO_free_all(x509file);
+		}
+		default:
+			break;
+	}
 
-        /* Write the certificate to disk. */
-        if (!PEM_write_bio_X509(x509file, x509)) {
-            RAII_LOG("Unable to write certificate to disk.");
-            BIO_free_all(x509file);
-            return nullptr;
-        }
-        BIO_free_all(x509file);
-    }
-
-    return $(true);
-}
-
-static void_t pkey_thread(args_t args) {
-    EVP_PKEY *pkey = args[0].object;
-    int keylength = args[1].integer;
-    int pkey_id = args[2].integer;
-    EVP_PKEY_CTX *ctx = nullptr;
-
-    switch (pkey_id) {
-        case EVP_PKEY_RSA:
-            if (is_empty(ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL))
-                || (EVP_PKEY_keygen_init(ctx) <= 0)
-                || (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keylength) <= 0)
-                || (EVP_PKEY_keygen(ctx, &pkey) <= 0)) {
-                ASIO_ssl_error();
-                return nullptr;
-            }
-            break;
-        default:
-            return nullptr;
-    }
-
-    /* The key has been generated, return it. */
-    return $(pkey);
+	return $(true);
 }
 
 ASIO_pkey_t *pkey_create(u32 num_pairs, ...) {}
@@ -916,11 +939,11 @@ EVP_PKEY *rsa_pkey(int keylength) {
     }
 
     defer((func_t)EVP_PKEY_free, pkey);
-    future fut = thrd_async(pkey_thread, 3, pkey, casting(keylength), casting(EVP_PKEY_RSA));
-    if (!thrd_is_done(fut))
+	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_generate_pkey), pkey, casting(keylength), casting(EVP_PKEY_RSA));
+	if (!thrd_is_done(fut))
         thrd_until(fut);
 
-    if (is_empty(thrd_get(fut).object))
+    if (!thrd_get(fut).boolean)
         return nullptr;
 
     return pkey;
@@ -967,7 +990,7 @@ X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain)
 }
 
 bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
-    future fut = thrd_async(x509_thread, 3, pkey, x509, path_noext);
+	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_create_self), pkey, x509, path_noext);
     if (!thrd_is_done(fut))
         thrd_until(fut);
 
@@ -975,7 +998,7 @@ bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
 }
 
 bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
-    future fut = thrd_async(x509_thread, 2, pkey, path_noext);
+	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), pkey, path_noext);
     if (!thrd_is_done(fut))
         thrd_until(fut);
 
@@ -983,7 +1006,7 @@ bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
 }
 
 bool csr_x509_export(X509_REQ *req, string_t path_noext) {
-    future fut = thrd_async(x509_thread, 2, req, path_noext);
+	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), req, path_noext);
     if (!thrd_is_done(fut))
         thrd_until(fut);
 
@@ -991,7 +1014,7 @@ bool csr_x509_export(X509_REQ *req, string_t path_noext) {
 }
 
 bool cert_x509_export(X509 *cert, string_t path_noext) {
-    future fut = thrd_async(x509_thread, 2, cert, path_noext);
+	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), cert, path_noext);
     if (!thrd_is_done(fut))
         thrd_until(fut);
 
@@ -1017,7 +1040,7 @@ ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
         }
 
         if (req.priv_key == nullptr) {
-            asio_generate_private_key(&req);
+            gen_private_key(&req);
             we_made_the_key = 1;
             pkey = req.priv_key;
         }
@@ -1081,6 +1104,199 @@ ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
     return x509_request_obj;
 }
 
+X509 *csr_sign(ASIO_req_t *csr_s, ASIO_cert_t *ca, ASIO_pkey_t *pkey, int days, int serial, arrays_t options) {
+    X509_REQ *csr;
+    ASIO_cert_t *cert_object;
+    hash_t *zpkey, *args = nullptr;
+    long num_days;
+    X509 *cert = nullptr, *new_cert = nullptr;
+    EVP_PKEY * key = nullptr, *priv_key = nullptr;
+    int i;
+    struct x509_request req;
+
+    csr = csr_s->csr;
+    if (csr == nullptr) {
+		RAII_LOG("X.509 Certificate Signing Request cannot be retrieved");
+		return;
+    }
+
+    cert = ca->x509;
+    if (cert == nullptr) {
+		RAII_LOG("X.509 Certificate cannot be retrieved");
+		goto cleanup;
+    }
+
+    priv_key = pkey->pkey;
+    if (priv_key == nullptr) {
+        RAII_LOG("Cannot get private key from parameter 3");
+        goto cleanup;
+    }
+
+    memset(&req, 0, sizeof(*&req));
+    if (cert && !X509_check_private_key(cert, priv_key)) {
+        ASIO_ssl_error();
+        RAII_LOG("Private key does not correspond to signing cert"); goto cleanup;
+    }
+
+    if (!parse_config(&req, args)) {
+        goto cleanup;
+    }
+
+    key = X509_REQ_get_pubkey(csr);
+    if (key == nullptr) {
+        ASIO_ssl_error();
+        RAII_LOG("Error unpacking public key");
+        goto cleanup;
+    }
+
+    i = X509_REQ_verify(csr, key);
+
+    if (i < 0) {
+        ASIO_ssl_error();
+        RAII_LOG("Signature verification problems");
+        goto cleanup;
+    } else if (i == 0) {
+        RAII_LOG("Signature did not match the certificate request");
+        goto cleanup;
+    }
+
+    new_cert = X509_new();
+    if (new_cert == nullptr) {
+        ASIO_ssl_error();
+        RAII_LOG("No memory");
+        goto cleanup;
+    }
+
+    if (!X509_set_version(new_cert, 2)) {
+        goto cleanup;
+    }
+
+#if !defined (LIBRESSL_VERSION_NUMBER)
+    ASN1_INTEGER_set_int64(X509_get_serialNumber(new_cert), serial);
+#else
+    ASN1_INTEGER_set(X509_get_serialNumber(new_cert), serial);
+#endif
+
+    X509_set_subject_name(new_cert, X509_REQ_get_subject_name(csr));
+    if (cert == nullptr) {
+		cert = new_cert;
+    }
+
+    if (!X509_set_issuer_name(new_cert, X509_get_subject_name(cert))) {
+        ASIO_ssl_error();
+        goto cleanup;
+    }
+
+    X509_gmtime_adj(X509_getm_notBefore(new_cert), 0);
+    X509_gmtime_adj(X509_getm_notAfter(new_cert), 60*60*24*(long)num_days);
+    i = X509_set_pubkey(new_cert, key);
+    if (!i) {
+        ASIO_ssl_error();
+        goto cleanup;
+    }
+
+    if (req.extensions_section) {
+        X509V3_CTX ctx;
+        X509V3_set_ctx(&ctx, cert, new_cert, csr, nullptr, 0);
+        X509V3_set_nconf(&ctx, req.req_config);
+        if (!X509V3_EXT_add_nconf(req.req_config, &ctx, req.extensions_section, new_cert)) {
+            ASIO_ssl_error();
+            goto cleanup;
+        }
+    }
+
+    if (!X509_sign(new_cert, priv_key, req.digest)) {
+        ASIO_ssl_error();
+        RAII_LOG("Failed to sign it");
+        goto cleanup;
+    }
+
+    //cert_object = calloc_local(1, sizeof(ASIO_cert_t));
+    //cert_object->x509 = new_cert;
+
+cleanup:
+    if (cert == new_cert) {
+        cert = nullptr;
+    }
+
+    dispose_config(&req);
+    EVP_PKEY_free(priv_key);
+    EVP_PKEY_free(key);
+
+    return new_cert;
+}
+
+EVP_PKEY *pkey_get(string_t file_path) {
+	EVP_PKEY *pkey = nullptr;
+	BIO *file_in = BIO_new_file(file_path, _BIO_MODE_R(PKCS7_BINARY));
+	if (is_empty(file_in))
+		return nullptr;
+
+	pkey = PEM_read_bio_PrivateKey(file_in, nullptr, nullptr, nullptr);
+	BIO_free(file_in);
+	if (is_empty(pkey))
+		return nullptr;
+
+	defer((func_t)EVP_PKEY_free, pkey);
+	return pkey;
+}
+
+string x509_str(X509 *cert, bool show_details) {
+	string out = nullptr;
+	BIO *bio_out;
+
+	if (cert == nullptr) {
+		RAII_LOG("X.509 Certificate cannot be retrieved");
+		return;
+	}
+
+	bio_out = BIO_new(BIO_s_mem());
+	if (!bio_out) {
+		ASIO_ssl_error();
+		goto cleanup;
+	}
+
+	if (show_details && !X509_print(bio_out, cert)) {
+		ASIO_ssl_error();
+	}
+
+	if (PEM_write_bio_X509(bio_out, cert)) {
+		BUF_MEM *bio_buf;
+
+		BIO_get_mem_ptr(bio_out, &bio_buf);
+		out = str_dup(bio_buf->data);
+	} else {
+		ASIO_ssl_error();
+	}
+
+	BIO_free(bio_out);
+
+cleanup:
+	return out;
+}
+
+X509 *x509_get(string_t file_path) {
+	X509 *cert;
+	BIO *file_in = BIO_new_file(file_path, _BIO_MODE_R(PKCS7_BINARY));
+	if (is_empty(file_in)) {
+		ASIO_ssl_error();
+		return nullptr;
+	}
+
+	cert = PEM_read_bio_X509(file_in, nullptr, nullptr, nullptr);
+	if (!BIO_free(file_in)) {
+		ASIO_ssl_error();
+	}
+
+	if (is_empty(cert)) {
+		ASIO_ssl_error();
+		return nullptr;
+	}
+
+	defer((func_t)X509_free, cert);
+	return cert;
+}
+
 void ASIO_ssl_error(void) {
     int error_code = ERR_get_error();
     char buf[UV_MAXHOSTNAMESIZE] = {0};
@@ -1090,16 +1306,86 @@ void ASIO_ssl_error(void) {
     fprintf(stderr, "Error: %s"CLR_LN, ERR_error_string(ERR_get_error(), buf));
 }
 
-RAII_INLINE bool is_ssl_pkey(void_t self) {
+RAII_INLINE bool is_pkey(void_t self) {
     return is_type(self, (raii_type)ASIO_SSL_PKEY);
 }
 
-RAII_INLINE bool is_ssl_req(void_t self) {
+RAII_INLINE bool is_cert_req(void_t self) {
     return is_type(self, (raii_type)ASIO_SSL_REQ);
 }
 
-RAII_INLINE bool is_ssl_cert(void_t self) {
+RAII_INLINE bool is_cert(void_t self) {
     return is_type(self, (raii_type)ASIO_SSL_CERT);
+}
+
+static void cert_names_setup(void) {
+	string name = (string)asio_hostname();
+	if (is_str_empty((string_t)asio_cert)) {
+		if (!(snprintf(asio_cert, sizeof(asio_cert), "%s.crt", name))
+		|| !(snprintf(asio_csr, sizeof(asio_csr), "%s.csr", name))
+		|| !(snprintf(asio_pkey, sizeof(asio_pkey), "%s.key", name))
+		|| !(snprintf(asio_self_touch, sizeof(asio_self_touch), "%s.local", name)))
+			RAII_INFO("Invalid certificate %s names: %s, %s, %s\n", name, asio_cert, asio_csr, asio_pkey);
+	}
+
+	return (string_t)asio_cert;
+}
+
+RAII_INLINE string_t cert_file(void) {
+	if (is_str_empty((string_t)asio_cert))
+		cert_names_setup();
+
+	return (string_t)asio_cert;
+}
+
+RAII_INLINE string_t default_cert_file(string path) {
+	string name = (string)asio_hostname();
+#ifdef _WIN32
+	string dir = is_empty(path) ? "..\\" : path;
+#else
+	string dir = is_empty(path) ? "../" : path;
+#endif
+	if (is_str_empty((string_t)asio_directory)) {
+		if (!(snprintf(asio_directory, sizeof(asio_directory), "%s", dir))
+			|| !(snprintf(asio_cert, sizeof(asio_cert), "%s%s.crt", asio_directory, name))
+			|| !(snprintf(asio_csr, sizeof(asio_csr), "%s%s.csr", asio_directory, name))
+			|| !(snprintf(asio_pkey, sizeof(asio_pkey), "%s%s.key", asio_directory, name)))
+			RAII_INFO("Invalid certificate %s names: %s, %s, %s, %s\n",
+			name, asio_cert, asio_csr, asio_pkey, asio_directory);
+	}
+
+	if (is_empty(path)
+		&& (snprintf(asio_self_touch, sizeof(asio_self_touch), "%s.local", name)))
+		return (string_t)asio_self_touch;
+
+	return (string_t)asio_cert;
+}
+
+RAII_INLINE string_t csr_file(void) {
+	if (is_str_empty((string_t)asio_csr))
+		cert_names_setup();
+
+	return (string_t)asio_csr;
+}
+
+RAII_INLINE string_t pkey_file(void) {
+	if (is_str_empty((string_t)asio_pkey))
+		cert_names_setup();
+
+	return (string_t)asio_pkey;
+}
+
+void use_certificate(string path, u32 ctx_pairs, ...) {
+	if (is_empty(path)) {
+		if (!file_exists(default_cert_file(path))) {
+			fs_touch(asio_self_touch);
+			EVP_PKEY *pkey = rsa_pkey(4096);
+			X509 *x509 = x509_self(pkey, NULL, NULL, asio_hostname());
+			x509_self_export(pkey, x509, asio_directory);
+		}
+	} else {
+		default_cert_file(path);
+	}
 }
 
 void ASIO_ssl_init(void) {
@@ -1107,7 +1393,6 @@ void ASIO_ssl_init(void) {
     OPENSSL_config(nullptr);
     SSL_library_init();
     OpenSSL_add_all_ciphers();
-    OpenSSL_add_all_digests();
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
 #else
@@ -1125,7 +1410,6 @@ void ASIO_ssl_init(void) {
         snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s/%s",
                  X509_get_default_cert_area(),
                  "openssl.cnf");
-        RAII_INFO("> %s <"CLR_LN, default_ssl_conf_filename);
     } else {
         snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s", config_filename);
     }

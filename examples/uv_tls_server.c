@@ -5,14 +5,10 @@
 // Distributed under the MIT License (See accompanying file LICENSE)
 //
 //////////////////////////////////////////////////////////////////////////
-//
+// See https://github.com/deleisha/evt-tls
 //%///////////////////////////////////////////////////////////////////////////
 
-#include <string.h>
-#include <stdint.h>
-#include <signal.h>
-#include "evt_tls.h"
-#include <rpmalloc.h>
+#include "asio.h"
 
 void on_write(uv_tls_t *tls, int status) {
     uv_tls_close(tls, (uv_tls_close_cb)free);
@@ -36,7 +32,7 @@ void on_uv_handshake(uv_tls_t *ut, int status) {
 void on_connect_cb(uv_stream_t *server, int status) {
     if( status ) return;
     uv_tcp_t *tcp = malloc(sizeof(*tcp)); //freed on uv_close callback
-    uv_tcp_init(uv_default_loop(), tcp);
+	uv_tcp_init(asio_loop(), tcp);
     if (uv_accept(server, (uv_stream_t*)tcp)) {
         return;
     }
@@ -49,31 +45,14 @@ void on_connect_cb(uv_stream_t *server, int status) {
     uv_tls_accept(sclient, on_uv_handshake);
 }
 
-#ifndef HOSTNAME
-#define HOSTNAME "localhost"
-#endif
-int main() {
-    uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
-    uv_loop_t *loop = uv_default_loop();
-    int port = 9010, r = 0;
+int uv_main(int argc, char **argv) {
+	yield();
+    uv_loop_t *loop = asio_loop();
+	int port = 7000, r = 0;
     evt_ctx_t ctx;
     struct sockaddr_in bind_local;
 
-    char name[256];
-    char crt[256];
-    char key[256];
-    size_t len = sizeof(name);
-
-    uv_os_gethostname(name, &len);
-    r = snprintf(crt, sizeof(crt), "%s.crt", name);
-    if (r == 0)
-        puts("Invalid hostname");
-
-    r = snprintf(key, sizeof(crt), "%s.key", name);
-    if (r == 0)
-        puts("Invalid hostname");
-
-    evt_ctx_init_ex(&ctx, crt, key);
+    evt_ctx_init_ex(&ctx, cert_file(), pkey_file());
     evt_ctx_set_nio(&ctx, NULL, uv_tls_writer);
 
     uv_tcp_t listener_local;
@@ -87,7 +66,7 @@ int main() {
         fprintf( stderr, "listen: %s\n", uv_strerror(r));
     printf("Listening on %d\n", port);
     uv_run(loop, UV_RUN_DEFAULT);
-    evt_ctx_free(&ctx);
+	evt_ctx_free(&ctx);
 
     return 0;
 }

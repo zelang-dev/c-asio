@@ -111,8 +111,10 @@ typedef enum {
     /* sha251_256 With RSA Encryption */
     rsa_sha512_256 = ext_nct + NID_sha512_256WithRSAEncryption,
     pkey_type,
-    pkey_bits
-} csr_types;
+    pkey_bits,
+    ca_path,
+    ca_file
+} csr_option_types;
 
 typedef struct {
     asio_types type;
@@ -387,6 +389,8 @@ C_API uv_dirent_t *fs_scandir_next(scandir_t *dir);
 C_API bool file_exists(string_t path);
 C_API size_t file_size(string_t path);
 
+C_API bool fs_touch(string_t filepath);
+
 C_API int fs_chmod(string_t path, int mode);
 C_API int fs_utime(string_t path, double atime, double mtime);
 C_API int fs_lutime(string_t path, double atime, double mtime);
@@ -513,14 +517,16 @@ C_API bool is_tty_out(void_t);
 C_API bool is_tty_err(void_t);
 C_API bool is_addrinfo(void_t);
 C_API bool is_nameinfo(void_t);
-C_API bool is_ssl_cert(void_t);
-C_API bool is_ssl_req(void_t);
-C_API bool is_ssl_pkey(void_t);
+C_API bool is_addressable(void_t);
 
 /* This library provides its own ~main~,
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 C_API u32 delay(u32 ms);
+
+C_API void tls_generator_set(uv_tls_t *);
+C_API void tls_yielding(uv_tls_t *, ssize_t nread, bool is_err);
+C_API uv_tls_t *tls_handle(uv_stream_t *);
 
 #ifdef _WIN32
 #define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")
@@ -538,12 +544,31 @@ typedef struct pkey_object ASIO_pkey_t;
 /* OpenSSL Certificate Signing Request */
 typedef struct x509_request_object ASIO_req_t;
 
+C_API bool is_pkey(void_t);
+C_API bool is_cert_req(void_t);
+C_API bool is_cert(void_t);
+
+C_API string_t cert_file(void);
+C_API string_t pkey_file(void);
+C_API string_t csr_file(void);
+
 C_API void ASIO_ssl_error(void);
 C_API void ASIO_ssl_init(void);
 
 C_API ASIO_pkey_t *pkey_create(u32 num_pairs, ...);
 C_API ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
 C_API ASIO_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+
+C_API X509* csr_sign(ASIO_req_t *,
+                     ASIO_cert_t *,
+                     ASIO_pkey_t *,
+                     int days,
+                     int serial,
+					 arrays_t options);
+
+C_API X509 *x509_get(string_t file_path);
+C_API EVP_PKEY *pkey_get(string_t file_path);
+C_API string x509_str(X509 *cert, bool show_details);
 
 C_API bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext);
 C_API bool csr_x509_export(X509_REQ *req, string_t path_noext);
@@ -552,6 +577,8 @@ C_API bool cert_x509_export(X509 *cert, string_t path_noext);
 C_API EVP_PKEY *rsa_pkey(int keylength);
 C_API X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
 C_API bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext);
+
+C_API void use_certificate(string path, u32 ctx_pairs, ...);
 #ifdef __cplusplus
 }
 #endif

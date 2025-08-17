@@ -119,7 +119,7 @@ endif()
 target_link_libraries(asio PUBLIC ${ZLIB_LIBRARIES})
 
 # enable the address sanitizer to catch bugs
-option(ENABLE_ASAN "Enable AddressSanitizer for Debug builds" ON)
+option(ENABLE_ASAN "Enable AddressSanitizer for Debug builds" OFF)
 
 # Only add sanitizer flags in Debug builds
 if(ENABLE_ASAN AND CMAKE_BUILD_TYPE MATCHES Debug)

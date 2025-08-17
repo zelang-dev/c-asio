@@ -126,23 +126,6 @@ int evt_ctx_set_crt_key(evt_ctx_t *tls, const char *crtf, const char *key) {
 }
 
 int evt_ctx_init(evt_ctx_t *tls) {
-    OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr);
-
-    /* Determine default SSL configuration file */
-    string config_filename = getenv("OPENSSL_CONF");
-    if (config_filename == nullptr) {
-        config_filename = getenv("SSLEAY_CONF");
-    }
-
-    /* default to 'openssl.cnf' if no environment variable is set */
-    if (config_filename == nullptr) {
-        snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename), "%s/%s",
-                 X509_get_default_cert_area(),
-                 "openssl.cnf");
-    } else {
-        snprintf(default_ssl_conf_filename, sizeof(default_ssl_conf_filename),"%s", config_filename);
-    }
-
     tls->ctx = SSL_CTX_new(TLS_method());
     if (!tls->ctx) {
         return -1;
@@ -267,8 +250,8 @@ static int evt__tls__op(evt_tls_t *conn, enum tls_op_type op, void *buf, int sz)
              * */
 
         case EVT_TLS_OP_SHUTDOWN:
-            {
-                r = SSL_shutdown(conn->ssl);
+			{
+				r = SSL_shutdown(conn->ssl);
                 bytes = evt__send_pending(conn);
                 if (conn->close_cb) {
                     conn->close_cb(conn, r);
@@ -446,8 +429,8 @@ int uv_tls_init(evt_ctx_t *ctx, uv_tcp_t *tcp, uv_tls_t *endpt) {
     //Replace the NULL with a meaningful error later
     RAII_ASSERT(t != NULL);
 
-    t->data = endpt;
-    tcp->data = endpt;
+	t->data = endpt;
+	tcp->data = endpt;
 
     endpt->tcp_hdl = tcp;
     endpt->tls = t;
@@ -460,29 +443,34 @@ int uv_tls_init(evt_ctx_t *ctx, uv_tcp_t *tcp, uv_tls_t *endpt) {
 }
 
 void on_tcp_eof(uv_handle_t *handle) {
-    uv_tls_t *utls = (uv_tls_t *)handle->data;
-    evt_tls_free(utls->tls);
-    free(handle);
+	uv_tls_t *utls = tls_handle((uv_stream_t *)handle);
+	if (is_addressable(utls->tls))
+		evt_tls_free(utls->tls);
+
+	free(handle);
 }
 
 void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data) {
-    uv_tls_t *parent = (uv_tls_t *)stream->data;
+	uv_tls_t *parent = tls_handle(stream);
 
-    RAII_ASSERT(parent != NULL);
+	RAII_ASSERT(parent != NULL);
     if (nrd <= 0) {
         if (nrd == UV_EOF) {
-            if (evt_tls_is_handshake_over(parent->tls)) {
+			if (is_addressable(parent->tls) && evt_tls_is_handshake_over(parent->tls)) {
                 uv_tls_close(parent, (uv_tls_close_cb)free);
             } else {
                 //if handshake is not over, simply tear down without close_notify
                 uv_close((uv_handle_t *)stream, on_tcp_eof);
             }
         }
-        free(data->base);
-        return;
-    }
-    evt_tls_feed_data(parent->tls, data->base, (int)nrd);
-    free(data->base);
+		free(data->base);
+
+		if (!is_empty(parent->uv_args))
+			tls_yielding(parent, nrd, true);
+	} else if (is_addressable(parent->tls)) {
+		evt_tls_feed_data(parent->tls, data->base, (int)nrd);
+		free(data->base);
+	}
 }
 
 static void on_hd_complete(evt_tls_t *t, int status) {
@@ -491,14 +479,16 @@ static void on_hd_complete(evt_tls_t *t, int status) {
     ut->tls_hsk_cb(ut, status - 1);
 }
 
-
 int uv_tls_accept(uv_tls_t *t, uv_handshake_cb cb) {
     int rv = 0;
     RAII_ASSERT(t != NULL);
     t->tls_hsk_cb = cb;
     evt_tls_t *tls = t->tls;
-    rv = evt_tls_accept(tls, on_hd_complete);
-    uv_read_start((uv_stream_t *)(t->tcp_hdl), alloc_cb, on_tcp_read);
+	evt_tls_accept(tls, on_hd_complete);
+	if (!is_empty(t->uv_args))
+		tls_generator_set(t);
+
+	rv = uv_read_start((uv_stream_t *)(t->tcp_hdl), alloc_cb, on_tcp_read);
     return rv;
 }
 
@@ -514,11 +504,14 @@ static void evt_on_rd(evt_tls_t *t, char *bfr, int sz) {
 }
 
 void my_uclose_cb(uv_handle_t *handle) {
-    uv_tls_t *utls = (uv_tls_t *)handle->data;
-    RAII_ASSERT(utls->tls_cls_cb != NULL);
-    evt_tls_free(utls->tls);
-    utls->tls_cls_cb(utls);
-    free(handle);
+	uv_tls_t *utls = tls_handle((uv_stream_t *)handle);
+	RAII_ASSERT(utls->tls_cls_cb != NULL);
+	if (is_addressable((utls->tls))) {
+		evt_tls_free(utls->tls);
+		utls->tls_cls_cb(utls);
+	}
+
+	free(handle);
 }
 
 void on_close(evt_tls_t *tls, int status) {

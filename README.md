@@ -343,6 +343,8 @@ C_API u32 delay(u32 ms);
 C_API string fs_readfile(string_t path);
 C_API int fs_writefile(string_t path, string_t text);
 
+C_API bool fs_touch(string_t filepath);
+
 C_API uv_file fs_open(string_t path, int flags, int mode);
 C_API int fs_close(uv_file fd);
 C_API uv_stat_t *fs_fstat(uv_file fd);
