@@ -69,8 +69,7 @@ int uv_main(int argc, char **argv) {
 	yield();
 	uv_loop_t *loop = asio_loop();
     //free on uv_close_cb via uv_tls_close call
-    uv_tcp_t *client = malloc(sizeof *client);
-    uv_tcp_init(loop, client);
+	uv_tcp_t *client = tcp_create();
     int port = 7000;
 
     evt_ctx_t ctx;
@@ -78,12 +77,9 @@ int uv_main(int argc, char **argv) {
 	evt_ctx_init_ex(&ctx, cert_file(), pkey_file());
     evt_ctx_set_nio(&ctx, NULL, uv_tls_writer);
 
-    struct sockaddr_in conn_addr;
-    uv_ip4_addr("127.0.0.1", port, &conn_addr);
-
     uv_connect_t req;
     req.data = &ctx;
-    uv_tcp_connect(&req, client,(const struct sockaddr*)&conn_addr, on_connect);
+	uv_tcp_connect(&req, client, sockaddr("127.0.0.1", port), on_connect);
 
     uv_run(loop, UV_RUN_DEFAULT);
 	evt_ctx_free(&ctx);

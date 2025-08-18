@@ -527,6 +527,7 @@ C_API u32 delay(u32 ms);
 C_API void tls_generator_set(uv_tls_t *);
 C_API void tls_yielding(uv_tls_t *, ssize_t nread, bool is_err);
 C_API uv_tls_t *tls_handle(uv_stream_t *);
+C_API sockaddr_t *sockaddr(string_t host, int port);
 
 #ifdef _WIN32
 #define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")

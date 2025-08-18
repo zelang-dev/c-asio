@@ -50,19 +50,16 @@ int uv_main(int argc, char **argv) {
     uv_loop_t *loop = asio_loop();
 	int port = 7000, r = 0;
     evt_ctx_t ctx;
-    struct sockaddr_in bind_local;
 
     evt_ctx_init_ex(&ctx, cert_file(), pkey_file());
     evt_ctx_set_nio(&ctx, NULL, uv_tls_writer);
 
-    uv_tcp_t listener_local;
-    uv_tcp_init(loop, &listener_local);
-    listener_local.data = &ctx;
-    uv_ip4_addr("127.0.0.1", port, &bind_local);
-    if ((r = uv_tcp_bind(&listener_local, (struct sockaddr*)&bind_local, 0)))
+	uv_tcp_t *listener_local = tcp_create();
+    listener_local->data = &ctx;
+	if ((r = uv_tcp_bind(listener_local, sockaddr("127.0.0.1", port), 0)))
         fprintf( stderr, "bind: %s\n", uv_strerror(r));
 
-    if ((r = uv_listen((uv_stream_t*)&listener_local, 1024, on_connect_cb)))
+    if ((r = uv_listen((uv_stream_t*)listener_local, 1024, on_connect_cb)))
         fprintf( stderr, "listen: %s\n", uv_strerror(r));
     printf("Listening on %d\n", port);
     uv_run(loop, UV_RUN_DEFAULT);

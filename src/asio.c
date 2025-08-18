@@ -1480,7 +1480,7 @@ int stream_write(uv_stream_t *handle, string_t text) {
         return RAII_ERR;
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-	if (is_defined(uv_args) || is_tls(handle)) {
+	if (is_defined(uv_args)) {
 		if ((!uv_is_writable(handle) || uv_is_closing(handler(handle))))
 			return UV_EBADF;
 
@@ -1669,12 +1669,17 @@ static string stream_get(uv_stream_t *handle) {
     return yield_for(gen).char_ptr;
 }
 
+sockaddr_t *sockaddr(string_t host, int port) {
+	uv_args_t *uv_args = uv_arguments(0, true);
+	return (sockaddr_t *)asio_sockaddr(host, port, uv_args->dns->in6, uv_args->dns->in4);
+}
+
 int stream_shutdown(uv_stream_t *handle) {
     if (is_empty(handle))
         return coro_err_code();
 
     uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(handle));
-    if (is_defined(uv_args) || is_tls(handle)) {
+    if (is_defined(uv_args)) {
         uv_args->args[0].object = handle;
     } else {
         uv_args = uv_arguments(1, true);
@@ -2666,10 +2671,10 @@ RAII_INLINE bool is_tcp(void_t self) {
 
 RAII_INLINE bool is_tls(uv_stream_t *self) {
     if (!self)
-        return false;
+		return false;
 
-    void_t check = uv_handle_get_data(handler(self));
-    return is_defined(check) && ((uv_args_t *)check)->bind_type == UV_TLS;
+	uv_args_t *uv_args = (uv_args_t *)uv_handle_get_data(handler(self));
+	return is_defined(uv_args) && uv_args->bind_type == UV_TLS;
 }
 
 RAII_INLINE bool is_udp(void_t self) {
