@@ -244,7 +244,7 @@ The *[tests](https://github.com/dermesser/uvco/tree/master/test)* presented ther
 
 ## Design
 
-The *intergration* pattern for all **libuv** functions taking *callback* is as [queue-work.c](https://github.com/zelang-dev/c-asio/tree/main/examples/queue-work.c) **example**:
+The *intergration* pattern for all **libuv** functions taking *callback* is as [waitgroup_work.c](https://github.com/zelang-dev/c-asio/tree/main/examples/waitgroup_work.c) **example**:
 
 ```c
 #define USE_CORO
@@ -488,6 +488,51 @@ C_API bool is_tty_out(void_t);
 C_API bool is_tty_err(void_t);
 C_API bool is_addrinfo(void_t);
 C_API bool is_nameinfo(void_t);
+
+C_API bool is_promise(void_t);
+C_API bool is_future(void_t);
+
+/*
+This runs the function `fn` asynchronously (potentially in a separate thread which
+might be a part of a thread pool) and returns a `future` that will eventually hold
+the result of that function call.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/async.html
+https://en.cppreference.com/w/cpp/thread/packaged_task.html
+
+MUST call either `queue_then()` or `queue_get()` to actually start execution in thread.
+*/
+C_API future queue_work(thrd_func_t fn, size_t num_args, ...);
+
+/*
+This will complete an normal `uv_queue_work()` setup execution and allow thread to run
+`queue_work()` provided `fn`.
+
+Will return `promise` only useful with `queue_get()`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/promise.html */
+C_API promise *queue_then(future, queue_cb callback);
+
+/*
+This waits aka `yield` until the `future` or `promise` is ready, then retrieves
+the value stored. Right after calling this function `queue_is_valid()` is `false`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/get.html */
+C_API template_t queue_get(void_t);
+
+/*
+Checks if the ~future/uv_work_t~ refers to a shared state aka `promise`, and `running`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/valid.html
+*/
+C_API bool queue_is_valid(future);
+
+/*
+Will `pause` and `yield` to another `coroutine` until `ALL` ~future/uv_work_t~
+results/requests in `array` become available/done. Calls `queue_is_valid()` on each.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/wait.html */
+C_API void queue_wait(arrays_t);
 
 /**
  * Initializes the process handle and starts the process.

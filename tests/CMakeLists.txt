@@ -11,6 +11,7 @@ set(TARGET_LIST
  test-udp
  test-pipe
  test-spawn
+ test-queue_work
 )
 
 add_executable(child child.c)

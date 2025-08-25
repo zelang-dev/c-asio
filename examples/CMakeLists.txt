@@ -14,6 +14,7 @@ set(TARGET_LIST
  create-x509
  uv_tls_server
  uv_tls_client
+ waitgroup_work
 )
 
 foreach (TARGET ${TARGET_LIST})

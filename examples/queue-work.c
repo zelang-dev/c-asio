@@ -1,5 +1,4 @@
-#define USE_CORO
-#include "raii.h"
+#include "asio.h"
 
 #define FIB_UNTIL 25
 
@@ -10,37 +9,35 @@ long fib_(long t) {
         return fib_(t-1) + fib_(t-2);
 }
 
-void_t fib(params_t req) {
-    int n = req->integer;
-    if (random() % 2)
-        sleepfor(1);
+void_t fib(args_t req) {
+	int n = req->integer;
+	if (random() % 2)
+        sleep(1);
     else
-        sleepfor(3);
+        sleep(3);
+	long fib = fib_(n);
+	fprintf(stderr, "%dth fibonacci is %lu"CLR_LN, n, fib);
 
-    long fib = fib_(n);
-    fprintf(stderr, "%dth fibonacci is %lu in thrd: #%d\033[0K\n", n, fib, coro_thrd_id());
-
-    return casting(fib);
+	return $$(n, fib);
 }
 
-void after_fib(int status, rid_t id) {
-    fprintf(stderr, "Done calculating %dth fibonacci, result: %d\n", status, result_for(id).integer);
+void after_fib(vectors_t req) {
+	fprintf(stderr, "Done calculating %dth fibonacci, result: %d"CLR_LN,
+		req[0].integer, req[1].integer);
 }
 
-int main(int argc, char **argv) {
-    rid_t data[FIB_UNTIL];
-    int i;
+int uv_main(int argc, char **argv) {
+	arrays_t arr = arrays();
+	int i;
 
-    waitgroup_t wg = waitgroup_ex(FIB_UNTIL);
-    for (i = 0; i < FIB_UNTIL; i++) {
-        data[i] = go(fib, 1, casting(i));
-    }
-    waitresult_t wgr = waitfor(wg);
+	yield();
+	for (i = 0; i < FIB_UNTIL; i++) {
+		future req = queue_work(fib, 1, casting(i));
+		$append(arr, req);
+		queue_then(req, after_fib);
+	}
 
-    if ($size(wgr) == FIB_UNTIL)
-        for (i = 0; i < FIB_UNTIL; i++) {
-            after_fib(i, data[i]);
-        }
+	queue_wait(arr);
 
-    return 0;
+	return 0;
 }

@@ -2,21 +2,17 @@
 #define _ASIO_H
 
 #define INTERRUPT_MODE UV_RUN_NOWAIT
-#ifndef CERTIFICATE
-    #define CERTIFICATE "localhost"
-#endif
 
 #include "evt_tls.h"
 #include "url_http.h"
 #include "reflection.h"
 
 #ifdef _WIN32
-#define INVALID_FD -EBADF
 #define use_ipc false
 #else
-#define INVALID_FD -EBADF
 #define use_ipc true
 #endif
+#define INVALID_FD -EBADF
 
 /* Cast ~libuv~ `obj` to `uv_stream_t` ptr. */
 #define streamer(obj) ((uv_stream_t *)obj)
@@ -201,6 +197,7 @@ typedef void (*stream_cb)(uv_stream_t *);
 typedef void (*packet_cb)(udp_packet_t *);
 typedef void (*spawn_cb)(int64_t status, int signal);
 typedef void (*spawn_handler_cb)(uv_stream_t *input, string output, uv_stream_t *duplex);
+typedef void (*queue_cb)(vectors_t result);
 
 typedef struct {
     asio_types type;
@@ -481,6 +478,49 @@ C_API int udp_send(uv_udp_t *handle, string_t message, string_t addr);
 C_API udp_packet_t *udp_recv(uv_udp_t *);
 C_API int udp_send_packet(udp_packet_t *, string_t);
 
+/*
+This runs the function `fn` asynchronously (potentially in a separate thread which
+might be a part of a thread pool) and returns a `future` that will eventually hold
+the result of that function call.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/async.html
+https://en.cppreference.com/w/cpp/thread/packaged_task.html
+
+MUST call either `queue_then()` or `queue_get()` to actually start execution in thread.
+*/
+C_API future queue_work(thrd_func_t fn, size_t num_args, ...);
+
+/*
+This will complete an normal `uv_queue_work()` setup execution and allow thread to run
+`queue_work()` provided `fn`.
+
+Will return `promise` only useful with `queue_get()`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/promise.html */
+C_API promise *queue_then(future, queue_cb callback);
+
+/*
+This waits aka `yield` until the `future` or `promise` is ready, then retrieves
+the value stored. Right after calling this function `queue_is_valid()` is `false`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/get.html */
+C_API template_t queue_get(void_t);
+
+/*
+Checks if the ~future/uv_work_t~ refers to a shared state aka `promise`, and `running`.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/valid.html
+*/
+C_API bool queue_is_valid(future);
+
+/*
+Will `pause` and `yield` to another `coroutine` until `ALL` ~future/uv_work_t~
+results/requests in `array` become available/done. Calls `queue_is_valid()` on each.
+
+Similar to: https://en.cppreference.com/w/cpp/thread/future/wait.html */
+C_API void queue_wait(arrays_t);
+C_API void queue_delete(future);
+
 #define UV_TLS                  RAII_SCHEME_TLS
 #define UV_CTX                  ASIO_ARGS + RAII_NAN
 
@@ -517,7 +557,9 @@ C_API bool is_tty_out(void_t);
 C_API bool is_tty_err(void_t);
 C_API bool is_addrinfo(void_t);
 C_API bool is_nameinfo(void_t);
-C_API bool is_addressable(void_t);
+
+C_API bool is_promise(void_t);
+C_API bool is_future(void_t);
 
 /* This library provides its own ~main~,
 which call this function as an coroutine! */

@@ -9,6 +9,7 @@ struct uv_args_s {
     bool is_server;
     bool is_generator;
     bool is_once;
+    volatile bool is_working;
     uv_fs_type fs_type;
     uv_req_type req_type;
     uv_handle_type handle_type;
@@ -26,6 +27,7 @@ struct uv_args_s {
     string buffer;
     uv_buf_t bufs;
     uv_fs_t fs_req;
+    uv_work_t work_req;
     uv_write_t write_req;
     uv_connect_t connect_req;
     uv_shutdown_t shutdown_req;
@@ -102,12 +104,12 @@ static void_t asio_sockaddr(const char *host, int port, struct sockaddr_in6 *add
     return addr_set;
 }
 
-static void uv_arguments_free(uv_args_t *uv_args) {
-    if (is_defined(uv_args)) {
-        if (!uv_args->is_freeable) {
-            array_delete(uv_args->args);
-            memset(uv_args, RAII_ERR, sizeof(raii_type));
-            RAII_FREE(uv_args);
+static void uv_arguments_free(uv_args_t *self) {
+    if (is_defined(self)) {
+		if (!self->is_freeable) {
+			array_delete(self->args);
+			memset(self, RAII_ERR, sizeof(raii_type));
+			RAII_FREE(self);
         }
     }
 }
@@ -129,6 +131,7 @@ static uv_args_t *uv_arguments(int count, bool auto_free) {
     uv_args->is_server = false;
     uv_args->is_generator = false;
     uv_args->is_once = false;
+    uv_args->is_working = false;
     uv_args->bind_type = RAII_SCHEME_TCP;
     uv_args->type = ASIO_ARGS;
     return uv_args;
@@ -867,6 +870,7 @@ static void_t uv_init(params_t uv_args) {
                     RAII_FREE(req);
                 break;
             case UV_WORK:
+                break;
             case UV_GETADDRINFO:
                 req = (uv_req_t *)&uv->addinfo_req;
                 result = uv_getaddrinfo(asio_loop(), (uv_getaddrinfo_t *)req,
@@ -1449,6 +1453,130 @@ nameinfo_t *get_nameinfo(string_t addr, int port, int flags) {
         uv_arguments_free(uv_args);
         return nullptr;
     }
+}
+
+static void queue_after_wrapper(uv_work_t *req, int status) {
+	uv_args_t *uv_args = (uv_args_t *)uv_req_get_data(requester(req));
+	future fut = (future)uv_args->args[1].object;
+	if (!status && $size(uv_args->args) > 2) {
+		queue_cb after_work = (queue_cb)uv_args->args[2].func;
+		after_work((vectors_t)fut->value->result->value.object);
+	}
+
+	promise_close(fut->value);
+	queue_delete(fut);
+	uv_args->is_working = false;
+}
+
+static void queue_work_wrapper(uv_work_t *req) {
+	uv_args_t *uv_args = (uv_args_t *)uv_req_get_data(requester(req));
+	args_t args = (args_t)uv_args->args[0].object;
+	future f = (future)uv_args->args[1].object;
+
+	/* Wait for start signal */
+	while (!atomic_flag_load_explicit(&f->started, memory_order_relaxed))
+		;
+
+	guarding(f, args);
+}
+
+static void_t queue_work_ex(params_t args) {
+	uv_args_t *uv_args = args->object;
+	future f = (future)uv_args->args[1].object;
+	coro_name("queue_work #%d", coro_active_id());
+	defer((func_t)uv_arguments_free, uv_args);
+	int r = uv_queue_work(asio_loop(), &uv_args->work_req, queue_work_wrapper, queue_after_wrapper);
+	if (r) {
+		promise_set(f->value, nullptr);
+		queue_after_wrapper(&uv_args->work_req, r);
+		return asio_abort(nullptr, r, coro_active());
+	}
+
+	uv_args->is_working = true;
+	while (uv_args->is_working)
+		coro_yield_info();
+
+	return nullptr;
+}
+
+void queue_delete(future f) {
+	if (is_type(f, RAII_FUTURE)) {
+		f->type = RAII_ERR;
+		if (!is_empty(f->scope))
+			raii_deferred_free(f->scope);
+
+		RAII_FREE(f);
+	}
+}
+
+void queue_wait(arrays_t work) {
+	yield();
+	while ($size(work) > 0) {
+		foreach(worker in work) {
+			if (!queue_is_valid(worker.object)) {
+				$erase(work, iworker);
+			}
+		}
+		iworker = 0;
+		yield();
+	}
+}
+
+RAII_INLINE bool queue_is_valid(future f) {
+	return is_type(f, RAII_FUTURE)
+		&& is_defined(f->scope->arena)
+		&& ((uv_args_t *)f->scope->arena)->is_working;
+}
+
+future queue_work(thrd_func_t fn, size_t num_args, ...) {
+	uv_args_t *uv_args = uv_arguments(2, false);
+	va_list ap;
+
+	va_start(ap, num_args);
+	args_t args = args_ex(num_args, ap);
+	va_end(ap);
+
+	promise *p = promise_create(get_scope());
+	future f = future_create(fn);
+	f->value = p;
+	f->scope = vector_scope(args);
+	f->scope->arena = (void_t)uv_args;
+	$append(uv_args->args, args);
+	$append(uv_args->args, f);
+	uv_req_set_data(requester(&uv_args->work_req), (void_t)uv_args);
+	coro_launch(queue_work_ex, 1, uv_args);
+	return f;
+}
+
+template_t queue_get(void_t queue) {
+	if (is_type(queue, RAII_FUTURE) || is_type(queue, RAII_PROMISE)) {
+		if (is_type(queue, RAII_FUTURE)) {
+			future f = (future)queue;
+			if (is_type(f->value, RAII_PROMISE)) {
+				atomic_flag_test_and_set(&f->started);
+				while (!atomic_flag_load(&f->value->done))
+					coro_yield_info();
+
+				return f->value->result->value;
+			}
+		} else if (is_type(queue, RAII_PROMISE)) {
+			promise *p = (promise *)queue;
+			while (!atomic_flag_load(&p->done))
+				coro_yield_info();
+
+			return p->result->value;
+		}
+	}
+
+	throw(logic_error);
+}
+
+RAII_INLINE promise *queue_then(future work, queue_cb callback) {
+	uv_args_t *uv_args = (uv_args_t *)work->scope->arena;
+	$append_func(uv_args->args, callback);
+	atomic_flag_test_and_set(&work->started);
+
+	return work->value;
 }
 
 static void_t stream_client(params_t args) {
@@ -2697,8 +2825,12 @@ RAII_INLINE bool is_addrinfo(void_t self) {
     return is_type(self, (raii_type)ASIO_DNS);
 }
 
-RAII_INLINE bool is_addressable(void_t self) {
-	return ((ptrdiff_t)self > 0x20000000);
+RAII_INLINE bool is_promise(void_t self) {
+	return is_type(self, RAII_PROMISE);
+}
+
+RAII_INLINE bool is_future(void_t self) {
+	return is_type(self, RAII_FUTURE);
 }
 
 string_t asio_uname(void) {

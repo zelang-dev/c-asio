@@ -769,36 +769,87 @@ static void php_openssl_add_assoc_name_entry(zval *val, char *key, X509_NAME *na
 }
 */
 
+static bool create_self_ex(EVP_PKEY *pkey, X509 *x509) {
+	BIO *x509file = nullptr, *pOut = nullptr;
+	bool no_error = true;
+	if (!(pOut = BIO_new_file(pkey_file(), _BIO_MODE_W(PKCS7_BINARY)))) {
+		RAII_INFO("Unable to open \"%s\" for writing.\n", pkey_file());
+		no_error = false;
+	} else if (pOut
+		&& !PEM_write_bio_PrivateKey(pOut, pkey, nullptr, nullptr, 0, nullptr, nullptr)) {
+		RAII_LOG("Unable to write private key to disk.");
+		BIO_free_all(pOut);
+		no_error = false;
+	} else if(pOut) {
+		BIO_free_all(pOut);
+	}
+
+	if (!(x509file = BIO_new_file(cert_file(), _BIO_MODE_W(PKCS7_BINARY)))) {
+		RAII_INFO("Unable to open \"%s\" for writing.\n", cert_file());
+		no_error = false;
+	} else if (x509file && !PEM_write_bio_X509(x509file, x509)) {
+		RAII_LOG("Unable to write certificate to disk.");
+		BIO_free_all(x509file);
+		no_error = false;
+	} else if (x509file) {
+		BIO_free_all(x509file);
+	}
+
+	return no_error;
+}
+
+static bool generate_pkey_ex(EVP_PKEY *pkey, int keylength, int pkey_id) {
+	EVP_PKEY_CTX *ctx = nullptr;
+	bool no_error = true;
+	switch (pkey_id) {
+		case EVP_PKEY_RSA:
+			if (is_empty(ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr))
+				|| (EVP_PKEY_keygen_init(ctx) <= 0)
+				|| (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keylength) <= 0)
+				|| (EVP_PKEY_keygen(ctx, &pkey) <= 0)) {
+				ASIO_ssl_error();
+				no_error = false;
+			}
+			break;
+		default:
+			no_error = false;;
+	}
+
+	if (ctx)
+		EVP_PKEY_CTX_free(ctx);
+
+	return no_error;
+}
+
 static void_t thrd_worker_thread(args_t args) {
 	thrd_worker_types preform = args[0].integer;
+	EVP_PKEY *pkey = nullptr;
+	X509 *x509 = nullptr;
+	X509_REQ *csr = nullptr;
+	bool no_error = true;
 	switch (preform) {
-		case ssl_generate_pkey: {
-			EVP_PKEY *pkey = args[1].object;
+		case ssl_generate_pkey:
+			pkey = args[1].object;
 			int keylength = args[2].integer;
 			int pkey_id = args[3].integer;
-			EVP_PKEY_CTX *ctx = nullptr;
-			switch (pkey_id) {
-				case EVP_PKEY_RSA:
-					if (is_empty(ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr))
-					|| (EVP_PKEY_keygen_init(ctx) <= 0)
-					|| (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, keylength) <= 0)
-					|| (EVP_PKEY_keygen(ctx, &pkey) <= 0)) {
-						ASIO_ssl_error();
-						return nullptr;
-					}
-					break;
-				default:
-					return nullptr;
+			no_error = generate_pkey_ex(pkey, keylength, pkey_id);
+			break;
+		case ssl_create_self:
+			pkey = EVP_PKEY_new();
+			args[1].object = pkey;
+			if (no_error = generate_pkey_ex(pkey, args[2].integer, args[3].integer)) {
+				no_error = false;
+				x509 = x509_self(args[1].object, NULL, NULL, asio_hostname());
+				if (x509) {
+					no_error = create_self_ex(pkey, x509);
+					X509_free(x509);
+				}
 			}
-			/* The key has been generated, return it. */
-			return $(true);
-		}
+			EVP_PKEY_free(pkey);
+			break;
 		case ssl_export_file: {
 			struct x509_request x509_req;
 			string name = nullptr, passphrase = nullptr;
-			EVP_PKEY *pkey = nullptr;
-			X509 *x509 = nullptr;
-			X509_REQ *csr = nullptr;
 			BIO *x509file = nullptr, *pOut = nullptr, *bio_out = nullptr;
 			hash_t *items = nullptr;
 			size_t passphrase_len = 0, filename_len = 0;
@@ -889,44 +940,11 @@ static void_t thrd_worker_thread(args_t args) {
 			}
 			break;
 		}
-		case ssl_create_self: {
-			EVP_PKEY *pkey = args[1].object;
-			X509 *x509 = args[2].object;
-			BIO *x509file = nullptr, *pOut = nullptr;
-			pOut = BIO_new_file(pkey_file(), _BIO_MODE_W(PKCS7_BINARY));
-			if (!pOut) {
-				RAII_INFO("Unable to open \"%s\" for writing.\n", pkey_file());
-				return nullptr;
-			}
-
-			/* Write the key to disk. */
-			if (!PEM_write_bio_PrivateKey(pOut, pkey, nullptr, nullptr, 0, nullptr, nullptr)) {
-				RAII_LOG("Unable to write private key to disk.");
-				BIO_free_all(pOut);
-				return nullptr;
-			}
-			BIO_free_all(pOut);
-
-			/* Open the PEM file for writing the certificate to disk. */
-			x509file = BIO_new_file(cert_file(), _BIO_MODE_W(PKCS7_BINARY));
-			if (!x509file) {
-				RAII_INFO("Unable to open \"%s\" for writing.\n", cert_file());
-				return nullptr;
-			}
-
-			/* Write the certificate to disk. */
-			if (!PEM_write_bio_X509(x509file, x509)) {
-				RAII_LOG("Unable to write certificate to disk.");
-				BIO_free_all(x509file);
-				return nullptr;
-			}
-			BIO_free_all(x509file);
-		}
 		default:
 			break;
 	}
 
-	return $(true);
+	return no_error ? $(true) : nullptr;
 }
 
 ASIO_pkey_t *pkey_create(u32 num_pairs, ...) {}
@@ -938,13 +956,14 @@ EVP_PKEY *rsa_pkey(int keylength) {
         return nullptr;
     }
 
-    defer((func_t)EVP_PKEY_free, pkey);
 	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_generate_pkey), pkey, casting(keylength), casting(EVP_PKEY_RSA));
 	if (!thrd_is_done(fut))
         thrd_until(fut);
 
-    if (!thrd_get(fut).boolean)
-        return nullptr;
+	if (!thrd_get(fut).boolean) {
+		EVP_PKEY_free(pkey);
+		return nullptr;
+	}
 
     return pkey;
 }
@@ -985,16 +1004,15 @@ X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain)
         return nullptr;
     }
 
-    defer((func_t)X509_free, x509);
     return x509;
 }
 
 bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
 	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_create_self), pkey, x509, path_noext);
     if (!thrd_is_done(fut))
-        thrd_until(fut);
+		thrd_until(fut);
 
-    return thrd_get(fut).boolean;
+	return thrd_get(fut).boolean;
 }
 
 bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
@@ -1378,10 +1396,21 @@ RAII_INLINE string_t pkey_file(void) {
 void use_certificate(string path, u32 ctx_pairs, ...) {
 	if (is_empty(path)) {
 		if (!file_exists(default_cert_file(path))) {
-			fs_touch(asio_self_touch);
+			//x509_self_export(nullptr, nullptr, asio_directory);
 			EVP_PKEY *pkey = rsa_pkey(4096);
-			X509 *x509 = x509_self(pkey, NULL, NULL, asio_hostname());
-			x509_self_export(pkey, x509, asio_directory);
+			//EVP_PKEY *pkey = EVP_PKEY_new();
+			if (pkey) {
+				//if (generate_pkey_ex(pkey, 4096, EVP_PKEY_RSA)) {
+					X509 *x509 = x509_self(pkey, NULL, NULL, asio_hostname());
+					if (x509) {
+						if (create_self_ex(pkey, x509))
+							fs_touch(asio_self_touch);
+
+						X509_free(x509);
+					}
+				//}
+				EVP_PKEY_free(pkey);
+			}
 		}
 	} else {
 		default_cert_file(path);
