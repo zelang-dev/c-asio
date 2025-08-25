@@ -956,11 +956,9 @@ EVP_PKEY *rsa_pkey(int keylength) {
         return nullptr;
     }
 
-	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_generate_pkey), pkey, casting(keylength), casting(EVP_PKEY_RSA));
-	if (!thrd_is_done(fut))
-        thrd_until(fut);
+	future fut = queue_work(thrd_worker_thread, 4, casting(ssl_generate_pkey), pkey, casting(keylength), casting(EVP_PKEY_RSA));
 
-	if (!thrd_get(fut).boolean) {
+	if (!queue_get(fut).boolean) {
 		EVP_PKEY_free(pkey);
 		return nullptr;
 	}
@@ -1008,35 +1006,27 @@ X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain)
 }
 
 bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
-	future fut = thrd_async(thrd_worker_thread, 4, casting(ssl_create_self), pkey, x509, path_noext);
-    if (!thrd_is_done(fut))
-		thrd_until(fut);
+	future fut = queue_work(thrd_worker_thread, 4, casting(ssl_create_self), pkey, x509, path_noext);
 
-	return thrd_get(fut).boolean;
+	return queue_get(fut).boolean;
 }
 
 bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
-	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), pkey, path_noext);
-    if (!thrd_is_done(fut))
-        thrd_until(fut);
+	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), pkey, path_noext);
 
-    return thrd_get(fut).boolean;
+    return queue_get(fut).boolean;
 }
 
 bool csr_x509_export(X509_REQ *req, string_t path_noext) {
-	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), req, path_noext);
-    if (!thrd_is_done(fut))
-        thrd_until(fut);
+	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), req, path_noext);
 
-    return thrd_get(fut).boolean;
+    return queue_get(fut).boolean;
 }
 
 bool cert_x509_export(X509 *cert, string_t path_noext) {
-	future fut = thrd_async(thrd_worker_thread, 3, casting(ssl_export_file), cert, path_noext);
-    if (!thrd_is_done(fut))
-        thrd_until(fut);
+	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), cert, path_noext);
 
-    return thrd_get(fut).boolean;
+    return queue_get(fut).boolean;
 }
 
 ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...) {
@@ -1396,21 +1386,8 @@ RAII_INLINE string_t pkey_file(void) {
 void use_certificate(string path, u32 ctx_pairs, ...) {
 	if (is_empty(path)) {
 		if (!file_exists(default_cert_file(path))) {
-			//x509_self_export(nullptr, nullptr, asio_directory);
-			EVP_PKEY *pkey = rsa_pkey(4096);
-			//EVP_PKEY *pkey = EVP_PKEY_new();
-			if (pkey) {
-				//if (generate_pkey_ex(pkey, 4096, EVP_PKEY_RSA)) {
-					X509 *x509 = x509_self(pkey, NULL, NULL, asio_hostname());
-					if (x509) {
-						if (create_self_ex(pkey, x509))
-							fs_touch(asio_self_touch);
-
-						X509_free(x509);
-					}
-				//}
-				EVP_PKEY_free(pkey);
-			}
+			if (x509_self_export(nullptr, nullptr, asio_directory))
+				fs_touch(asio_self_touch);
 		}
 	} else {
 		default_cert_file(path);

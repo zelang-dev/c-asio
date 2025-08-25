@@ -1500,7 +1500,7 @@ static void_t queue_work_ex(params_t args) {
 }
 
 void queue_delete(future f) {
-	if (is_type(f, RAII_FUTURE)) {
+	if (is_future(f)) {
 		f->type = RAII_ERR;
 		if (!is_empty(f->scope))
 			raii_deferred_free(f->scope);
@@ -1523,8 +1523,7 @@ void queue_wait(arrays_t work) {
 }
 
 RAII_INLINE bool queue_is_valid(future f) {
-	return is_type(f, RAII_FUTURE)
-		&& is_defined(f->scope->arena)
+	return is_future(f) && is_defined(f->scope->arena)
 		&& ((uv_args_t *)f->scope->arena)->is_working;
 }
 
@@ -1549,17 +1548,19 @@ future queue_work(thrd_func_t fn, size_t num_args, ...) {
 }
 
 template_t queue_get(void_t queue) {
-	if (is_type(queue, RAII_FUTURE) || is_type(queue, RAII_PROMISE)) {
-		if (is_type(queue, RAII_FUTURE)) {
+	if (is_future(queue) || is_promise(queue)) {
+		if (is_future(queue)) {
 			future f = (future)queue;
-			if (is_type(f->value, RAII_PROMISE)) {
+			if (is_promise(f->value)) {
 				atomic_flag_test_and_set(&f->started);
+				yield();
 				while (!atomic_flag_load(&f->value->done))
 					coro_yield_info();
 
 				return f->value->result->value;
 			}
-		} else if (is_type(queue, RAII_PROMISE)) {
+		} else if (is_promise(queue)) {
+			yield();
 			promise *p = (promise *)queue;
 			while (!atomic_flag_load(&p->done))
 				coro_yield_info();
