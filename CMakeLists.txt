@@ -52,37 +52,29 @@ target_link_libraries(asio PUBLIC uv_a)
 target_include_directories(asio AFTER PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR} $<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
 target_link_libraries(asio PUBLIC raii)
 
-find_package(OpenSSL 1.1.0...3.0.2)
-if(OPENSSL_FOUND)
-    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR} $<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
+find_package(opentls QUIET)
+if(NOT opentls_FOUND)
+    FetchContent_Declare(opentls
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.0.zip
+        URL_MD5 8214dec1bf013af836efb2dae8882c30
+    )
     if(WIN32)
         add_definitions(-DOPENSSL_USE_STATIC_LIBS=TRUE)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
         add_definitions(-DNO_GETTIMEOFDAY)
         include_directories(${OPENSSL_INCLUDE_DIR})
     endif()
-    target_link_libraries(asio PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
-    target_link_libraries(asio PUBLIC ${OPENSSL_SSL_LIBRARY})
-else()
-    find_package(LibreSSL QUIET)
-    if(NOT LibreSSL_FOUND)
-        FetchContent_Declare(libressl
-            URL https://github.com/libressl/portable/releases/download/v4.1.0/libressl-4.1.0.tar.gz
-            URL_MD5 18079dcf72a398d8c188e67e30c1dc13
-        )
-        option(LIBRESSL_APPS "Build apps" OFF)
-        option(LIBRESSL_TESTS "Build tests" OFF)
-        FetchContent_MakeAvailable(libressl)
-    endif()
-    set(LIBRESSL_APPS OFF CACHE BOOL "Build apps" FORCE)
-    set(LIBRESSL_TESTS OFF CACHE BOOL "Build tests" FORCE)
-    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${LibreSSL_INCLUDE_DIR} $<INSTALL_INTERFACE:${LibreSSL_INCLUDE_DIR})
-    target_link_libraries(asio PUBLIC crypto)
-    target_link_libraries(asio PUBLIC ssl)
+    FetchContent_MakeAvailable(opentls)
 endif()
+target_include_directories(asio	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}
+	$<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
+target_include_directories(asio PUBLIC ${OPENTLS_INCLUDE_DIR}
+	$<INSTALL_INTERFACE:${OPENTLS_INCLUDE_DIR})
+target_link_libraries(asio PUBLIC ${OPENTLS_LIBRARY})
+target_link_libraries(asio PUBLIC ${OPENSSL_LIBRARIES})
 
-target_include_directories(asio
-    PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 if(UNIX)
     if(APPLE)
