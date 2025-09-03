@@ -9,6 +9,7 @@
 //%///////////////////////////////////////////////////////////////////////////
 
 #include "asio.h"
+#include "src/evt_tls.h"
 
 void on_write(uv_tls_t *tls, int status) {
     uv_tls_close(tls, (uv_tls_close_cb)free);

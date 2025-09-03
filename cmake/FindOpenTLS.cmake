@@ -59,11 +59,12 @@ Set OPENTLS_ROOT_DIR to the root directory of an openTLS installation.
 # Find TLS Library
 find_library(opentls_LIBRARY
     NAMES
-        libtls
-        openTLS
-        libopenTLS
-        libretls
+        opentls
+        libopentls
         tls
+        libtls
+        retls
+        libretls
 )
 mark_as_advanced(opentls_LIBRARY)
 
@@ -72,7 +73,6 @@ find_path(opentls_INCLUDE_DIR
     NAMES tls.h
 )
 mark_as_advanced(opentls_INCLUDE_DIR)
-set(OPENTLS_INCLUDE_DIR ${INCLUDE_INSTALL_DIR})
 
 include (FindPackageHandleStandardArgs)
 # Set Find Package Arguments
@@ -87,18 +87,19 @@ find_package_handle_standard_args(opentls
 
 set(OPENTLS_FOUND ${opentls_FOUND})
 set(OPENSSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+set(OPENTLS_LIBRARY ${OPENTLS_LIBRARY} ${OPENSSL_LIBRARIES})
+set(OPENTLS_INCLUDE_DIR ${opentls_LIBRARY})
 
 # openTLS Found
 if(OPENTLS_FOUND)
 	set(OPENTLS_INCLUDE_DIRS ${OPENTLS_INCLUDE_DIR})
 	set(OPENTLS_LIBRARIES ${OPENTLS_LIBRARY})
     # Set OPENTLS::TLS
-    if(NOT TARGET OPENTLS::TLS AND EXISTS "${OPENTLS_LIBRARY}")
+    if(NOT TARGET OPENTLS::TLS)
         add_library(OPENTLS::TLS UNKNOWN IMPORTED)
         set_target_properties(OPENTLS::TLS PROPERTIES
 			IMPORTED_LOCATION "${OPENTLS_LIBRARY}"
 			INTERFACE_INCLUDE_DIRECTORIES "${OPENTLS_INCLUDE_DIRS}"
-			INTERFACE_LINK_LIBRARIES ${OPENSSL_LIBRARIES}
         )
     endif() # OPENTLS::TLS
 endif(OPENTLS_FOUND)

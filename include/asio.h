@@ -3,9 +3,9 @@
 
 #define INTERRUPT_MODE UV_RUN_NOWAIT
 
-#include "evt_tls.h"
-#include "url_http.h"
-#include "reflection.h"
+#include "async_tls.h"
+#include <url_http.h>
+#include <reflection.h>
 
 #ifdef _WIN32
 #define use_ipc false
@@ -532,7 +532,9 @@ C_API void queue_delete(future);
     for (X = ((dnsinfo_t *)S)->original; X != nullptr; X = addrinfo_next((dnsinfo_t *)S))
 #define foreach_addrinfo(...)   foreach_xp(foreach_in_info, (__VA_ARGS__))
 
+
 C_API uv_loop_t *asio_loop(void);
+C_API void_t asio_abort(void_t, int, routine_t *);
 
 /* For displaying Cpu core count, library version, and OS system info from `uv_os_uname()`. */
 C_API string_t asio_uname(void);
@@ -566,9 +568,17 @@ which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 C_API u32 delay(u32 ms);
 
-C_API void tls_generator_set(uv_tls_t *);
-C_API void tls_yielding(uv_tls_t *, ssize_t nread, bool is_err);
-C_API uv_tls_t *tls_handle(uv_stream_t *);
+typedef struct {
+	volatile bool ready;
+	size_t max;
+	ssize_t status;
+	unsigned char *buf;
+	routine_t *thread;
+} async_state;
+
+C_API async_state *async_state_handle_get(void_t);
+C_API async_state *async_state_req_get(void_t);
+
 C_API sockaddr_t *sockaddr(string_t host, int port);
 
 #ifdef _WIN32

@@ -8,6 +8,7 @@
 // See https://github.com/deleisha/evt-tls
 //%///////////////////////////////////////////////////////////////////////////
 #include "asio.h"
+#include "evt_tls.h"
 
 /*
  *All the asserts used in the code are possible targets for error
@@ -443,7 +444,7 @@ int uv_tls_init(evt_ctx_t *ctx, uv_tcp_t *tcp, uv_tls_t *endpt) {
 }
 
 void on_tcp_eof(uv_handle_t *handle) {
-	uv_tls_t *utls = tls_handle((uv_stream_t *)handle);
+	uv_tls_t *utls = (uv_tls_t *)handle->data;
 	if (is_addressable(utls->tls))
 		evt_tls_free(utls->tls);
 
@@ -451,7 +452,7 @@ void on_tcp_eof(uv_handle_t *handle) {
 }
 
 void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data) {
-	uv_tls_t *parent = tls_handle(stream);
+	uv_tls_t *parent = (uv_tls_t *)stream->data;
 
 	RAII_ASSERT(parent != NULL);
     if (nrd <= 0) {
@@ -464,9 +465,6 @@ void on_tcp_read(uv_stream_t *stream, ssize_t nrd, const uv_buf_t *data) {
             }
         }
 		free(data->base);
-
-		if (!is_empty(parent->uv_args))
-			tls_yielding(parent, nrd, true);
 	} else if (is_addressable(parent->tls)) {
 		evt_tls_feed_data(parent->tls, data->base, (int)nrd);
 		free(data->base);
@@ -485,9 +483,6 @@ int uv_tls_accept(uv_tls_t *t, uv_handshake_cb cb) {
     t->tls_hsk_cb = cb;
     evt_tls_t *tls = t->tls;
 	evt_tls_accept(tls, on_hd_complete);
-	if (!is_empty(t->uv_args))
-		tls_generator_set(t);
-
 	rv = uv_read_start((uv_stream_t *)(t->tcp_hdl), alloc_cb, on_tcp_read);
     return rv;
 }
@@ -504,7 +499,7 @@ static void evt_on_rd(evt_tls_t *t, char *bfr, int sz) {
 }
 
 void my_uclose_cb(uv_handle_t *handle) {
-	uv_tls_t *utls = tls_handle((uv_stream_t *)handle);
+	uv_tls_t *utls = (uv_tls_t *)handle->data;
 	RAII_ASSERT(utls->tls_cls_cb != NULL);
 	if (is_addressable((utls->tls))) {
 		evt_tls_free(utls->tls);

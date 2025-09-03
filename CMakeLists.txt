@@ -40,41 +40,44 @@ if(NOT libuv_FOUND)
     FetchContent_MakeAvailable(libuv)
 endif()
 
-set(lib_files
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/asio.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ssl.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/evt_tls.c
-)
-
-add_library(asio STATIC ${lib_files})
-set_property(TARGET asio PROPERTY POSITION_INDEPENDENT_CODE True)
-target_link_libraries(asio PUBLIC uv_a)
-target_include_directories(asio AFTER PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR} $<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
-target_link_libraries(asio PUBLIC raii)
-
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.0.zip
-        URL_MD5 8214dec1bf013af836efb2dae8882c30
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.2.zip
+        URL_MD5 8ab6d0e105a007df8b59f1eb43444d1a
     )
     if(WIN32)
-        add_definitions(-DOPENSSL_USE_STATIC_LIBS=TRUE)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
         add_definitions(-DNO_GETTIMEOFDAY)
         include_directories(${OPENSSL_INCLUDE_DIR})
     endif()
     FetchContent_MakeAvailable(opentls)
 endif()
-target_include_directories(asio	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}
-	$<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
-target_include_directories(asio PUBLIC ${OPENTLS_INCLUDE_DIR}
-	$<INSTALL_INTERFACE:${OPENTLS_INCLUDE_DIR})
-target_link_libraries(asio PUBLIC ${OPENTLS_LIBRARY})
-target_link_libraries(asio PUBLIC ${OPENSSL_LIBRARIES})
 
-target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+set(lib_files
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/async_tls.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/asio.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/ssl.c
+)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${RAII_INCLUDE_DIR}/include)
+
+add_library(asio STATIC ${lib_files})
+target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR}/include>
+	$<INSTALL_INTERFACE:${RAII_INCLUDE_DIR}>)
+target_include_directories(asio	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}/include>
+	$<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
+target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR})
+
+target_link_libraries(asio PUBLIC ${OPENSSL_SSL_LIBRARY})
+target_link_libraries(asio PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(asio PUBLIC opentls)
+target_link_libraries(asio PUBLIC uv_a)
+target_link_libraries(asio PUBLIC raii)
+
+set_property(TARGET asio PROPERTY POSITION_INDEPENDENT_CODE True)
 
 if(UNIX)
     if(APPLE)

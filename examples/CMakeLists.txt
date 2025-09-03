@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8...3.14)
+add_subdirectory(evt_tls)
 
 set(TARGET_LIST
  helloworld
@@ -12,8 +12,6 @@ set(TARGET_LIST
  queue-work
  dns
  create-x509
- uv_tls_server
- uv_tls_client
  waitgroup_work
 )
 

@@ -11,13 +11,8 @@
 #ifndef EVT_TLS_H
 #define EVT_TLS_H
 
-#include <openssl/err.h>
-#include <openssl/ssl.h>
-#include <openssl/conf.h>
-#include <openssl/engine.h>
-#include <openssl/ossl_typ.h>
+#include "async_tls.h"
 #include "queue.h"
-#include "uv.h"
 
 #ifdef __cplusplus
 extern "C" {
