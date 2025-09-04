@@ -17,5 +17,5 @@ set(TARGET_LIST
 
 foreach (TARGET ${TARGET_LIST})
     add_executable(${TARGET} ${TARGET}.c)
-    target_link_libraries(${TARGET} asio)
+    target_link_libraries(${TARGET} ${PROJECT_NAME})
 endforeach()

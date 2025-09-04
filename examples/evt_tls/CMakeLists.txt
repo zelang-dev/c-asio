@@ -1,5 +1,5 @@
 add_library(evt_tls STATIC src/evt_tls.c)
-target_link_libraries(evt_tls PUBLIC asio)
+target_link_libraries(evt_tls PUBLIC ${PROJECT_NAME})
 
 add_executable(uv_tls_server uv_tls_server.c)
 target_link_libraries(uv_tls_server evt_tls)

@@ -15,10 +15,10 @@ set(TARGET_LIST
 )
 
 add_executable(child child.c)
-target_link_libraries(child asio)
+target_link_libraries(child ${PROJECT_NAME})
 
 foreach (TARGET ${TARGET_LIST})
     add_executable(${TARGET} ${TARGET}.c )
-    target_link_libraries(${TARGET} asio)
+    target_link_libraries(${TARGET} ${PROJECT_NAME})
     add_test(NAME ${TARGET} COMMAND ${TARGET} WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 endforeach()

@@ -4,7 +4,7 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(c-asio LANGUAGES C)
+project(asio LANGUAGES C)
 
 set(CMAKE_C_STANDARD 90)
 
@@ -43,8 +43,8 @@ endif()
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.2.zip
-        URL_MD5 8ab6d0e105a007df8b59f1eb43444d1a
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.3.zip
+        URL_MD5 c3bcb8f797babc7381af30ac354ee735
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
@@ -60,22 +60,24 @@ set(lib_files
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ssl.c
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(${RAII_INCLUDE_DIR}/include)
-
-add_library(asio STATIC ${lib_files})
-target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR}/include>
-	$<INSTALL_INTERFACE:${RAII_INCLUDE_DIR}>)
-target_include_directories(asio	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}/include>
+add_library(${PROJECT_NAME} STATIC ${lib_files})
+add_library(ASIO::ASYNC ALIAS ${PROJECT_NAME})
+target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR}
+	$<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
+target_include_directories(${PROJECT_NAME}	PUBLIC $<BUILD_INTERFACE:${OPENTLS_INCLUDE_DIR}
+	$<INSTALL_INTERFACE:${OPENTLS_INCLUDE_DIR})
+target_include_directories(${PROJECT_NAME}	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}
 	$<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
-target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include
-	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR})
+target_include_directories(${PROJECT_NAME} PUBLIC
+	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+	$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 
-target_link_libraries(asio PUBLIC ${OPENSSL_SSL_LIBRARY})
-target_link_libraries(asio PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
-target_link_libraries(asio PUBLIC opentls)
-target_link_libraries(asio PUBLIC uv_a)
-target_link_libraries(asio PUBLIC raii)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_SSL_LIBRARY})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(${PROJECT_NAME} PUBLIC opentls)
+target_link_libraries(${PROJECT_NAME} PUBLIC uv_a)
+target_link_libraries(${PROJECT_NAME} PUBLIC raii)
 
 set_property(TARGET asio PROPERTY POSITION_INDEPENDENT_CODE True)
 
@@ -94,7 +96,7 @@ endif()
 
 find_package(ZLIB CONFIG)
 if(ZLIB_FOUND)
-    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+    target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
     message(STATUS "Cmake FindZLIB: using ZLIB includes at: ${ZLIB_INCLUDE_DIR}")
     message(STATUS "Cmake FindZLIB: using ZLIB libraries: ${ZLIB_LIBRARIES}")
 else()
@@ -109,9 +111,9 @@ else()
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "Build tests" FORCE)
     set(ZLIB_BUILD_MINIZIP OFF CACHE BOOL "Build libminizip" FORCE)
     set(ZLIB_INSTALL ON CACHE BOOL "Install zlib" FORCE)
-    target_include_directories(asio PUBLIC $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+    target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
 endif()
-target_link_libraries(asio PUBLIC ${ZLIB_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${ZLIB_LIBRARIES})
 
 # enable the address sanitizer to catch bugs
 option(ENABLE_ASAN "Enable AddressSanitizer for Debug builds" OFF)
@@ -164,5 +166,5 @@ set(CPACK_PACKAGE_VERSION 1.0.0)
 include(CPack)
 
 set(CMAKE_INSTALL_CONFIG_NAME ${CMAKE_BUILD_TYPE})
-install(TARGETS ${asio} DESTINATION lib)
+install(TARGETS ${PROJECT_NAME} DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include)
