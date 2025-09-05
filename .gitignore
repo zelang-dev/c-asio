@@ -56,5 +56,4 @@ build/
 frontmatter.json
 built/
 *.crt
-*.pem
 *.key
