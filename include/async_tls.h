@@ -17,7 +17,7 @@
 
 // According to SSL Labs, enabling TLS1.1 doesn't do any good...
 // Not 100% sure about its status in IE11 though.
-#define ASYNC_TLS_PROTOCOLS (TLS_PROTOCOL_TLSv1_2)
+#define ASYNC_TLS_PROTOCOLS (TLS_PROTOCOLS_DEFAULT)
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,7 +42,6 @@ char *async_tls_read(async_tls_t *const socket);
 ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const buf, size_t const len);
 
 ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t const max);
-int async_connect(uv_tcp_t *const stream, struct sockaddr const *const addr);
 
 #ifdef __cplusplus
 }

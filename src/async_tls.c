@@ -6,14 +6,13 @@
 static int tlserr(int const rc, struct tls *const secure) {
 	if (0 == rc) return 0;
 	RAII_ASSERT(-1 == rc);
-	if (0) { // DEBUG
-		fprintf(stderr, "TLS error: %s\n", tls_error(secure));
-
-		SSL_load_error_strings();
-		char x[255 + 1];
-		ERR_error_string_n(ERR_get_error(), x, sizeof(x));
-		fprintf(stderr, "SSL error: %s\n", x);
-	}
+#ifdef USE_DEBUG
+	fprintf(stderr, "TLS error: %s\n", tls_error(secure));
+	SSL_load_error_strings();
+	char x[255 + 1];
+	ERR_error_string_n(ERR_get_error(), x, sizeof(x));
+	fprintf(stderr, "SSL error: %s\n", x);
+#endif
 	return UV_EPROTO;
 }
 
@@ -26,7 +25,7 @@ static int tls_poll(uv_stream_t *const stream, int const event) {
 		// TODO: libuv provides NO WAY to wait until a stream is
 		// writable! Even our zero-length write hack doesn't work.
 		// uv_poll can't be used on uv's own stream fds.
-		rc = delay(50) >= 0 ? 0 : RAII_ERR;
+		rc = delay(25) >= 0 ? 0 : RAII_ERR;
 	} else {
 		rc = event;
 	}
@@ -175,7 +174,7 @@ ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const bu
 }
 
 static void tls_alloc_cb(uv_handle_t *const handle, size_t const suggested_size, uv_buf_t *const buf) {
-	async_state *const state = async_state_handle_get(handle);
+	async_state *const state = handle_getasync_state(handle);
 	RAII_ASSERT(buf);
 	RAII_ASSERT(state);
 	buf->base = (char *)state->buf;
@@ -183,7 +182,7 @@ static void tls_alloc_cb(uv_handle_t *const handle, size_t const suggested_size,
 }
 
 static void tls_yield_cb(uv_stream_t *const stream, ssize_t const nread, uv_buf_t const *const buf) {
-	async_state *const state = async_state_handle_get(stream);
+	async_state *const state = handle_getasync_state(stream);
 	RAII_ASSERT(state);
 	RAII_ASSERT(state->thread);
 	state->ready = true;
@@ -193,7 +192,7 @@ static void tls_yield_cb(uv_stream_t *const stream, ssize_t const nread, uv_buf_
 
 ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t const max) {
 	if (!stream) return UV_EINVAL;
-	async_state *state = async_state_handle_get(stream);
+	async_state *state = handle_getasync_state(stream);
 	int rc;
 
 	state->thread = coro_active();
@@ -218,27 +217,4 @@ ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t c
 	if (UV_ENOBUFS == rc && 0 == max) rc = 0;
 
 	return rc;
-}
-
-static void tls_connect_cb(uv_connect_t *const req, int const status) {
-	async_state *const state = async_state_req_get(req);
-	state->status = status;
-	state->ready = true;
-	coro_await_yield(state->thread, nullptr, state->status, true, false);
-}
-
-int async_connect(uv_tcp_t *const stream, struct sockaddr const *const addr) {
-	uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(stream));
-	async_state *state = async_state_handle_get(stream);
-	int rc;
-
-	state->thread = coro_active();
-	state->ready = false;
-	//int rc = uv_tcp_connect(&uv->connect_req, stream, addr, tls_connect_cb);
-	if (rc < 0) return rc;
-	yield();
-	while (!state->ready)
-		coro_yield_info();
-
-	return state->status;
 }

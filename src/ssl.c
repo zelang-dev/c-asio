@@ -836,10 +836,9 @@ static void_t thrd_worker_thread(args_t args) {
 			break;
 		case ssl_create_self:
 			pkey = EVP_PKEY_new();
-			args[1].object = pkey;
-			if (no_error = generate_pkey_ex(pkey, args[2].integer, args[3].integer)) {
+			if (no_error = generate_pkey_ex(pkey, 4096, EVP_PKEY_RSA)) {
 				no_error = false;
-				x509 = x509_self(args[1].object, NULL, NULL, asio_hostname());
+				x509 = x509_self(pkey, NULL, NULL, asio_hostname());
 				if (x509) {
 					no_error = create_self_ex(pkey, x509);
 					X509_free(x509);
@@ -1395,15 +1394,7 @@ void use_certificate(string path, u32 ctx_pairs, ...) {
 }
 
 void ASIO_ssl_init(void) {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined (LIBRESSL_VERSION_NUMBER)
-    OPENSSL_config(nullptr);
-    SSL_library_init();
-    OpenSSL_add_all_ciphers();
-    OpenSSL_add_all_algorithms();
-    SSL_load_error_strings();
-#else
     OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, nullptr);
-#endif
 
     /* Determine default SSL configuration file */
     string config_filename = getenv("OPENSSL_CONF");

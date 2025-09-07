@@ -1,6 +1,10 @@
 #ifndef _ASIO_H
 #define _ASIO_H
 
+#define ASIO_VERSION_MAJOR 1
+#define ASIO_VERSION_MINOR 0
+#define ASIO_VERSION_PATCH 0
+
 #define INTERRUPT_MODE UV_RUN_NOWAIT
 
 #include "async_tls.h"
@@ -576,8 +580,8 @@ typedef struct {
 	routine_t *thread;
 } async_state;
 
-C_API async_state *async_state_handle_get(void_t);
-C_API async_state *async_state_req_get(void_t);
+C_API async_state *handle_getasync_state(void_t);
+C_API async_state *req_getasync_state(void_t);
 
 C_API sockaddr_t *sockaddr(string_t host, int port);
 

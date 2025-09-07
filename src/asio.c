@@ -1382,7 +1382,6 @@ static void queue_after_wrapper(uv_work_t *req, int status) {
 		after_work((vectors_t)fut->value->result->value.object);
 	}
 
-	promise_close(fut->value);
 	queue_delete(fut);
 	uv_args->is_working = false;
 }
@@ -1404,6 +1403,7 @@ static void_t queue_work_ex(params_t args) {
 	future f = (future)uv_args->args[1].object;
 	coro_name("queue_work #%d", coro_active_id());
 	defer((func_t)uv_arguments_free, uv_args);
+	defer((func_t)promise_close, f->value);
 	int r = uv_queue_work(asio_loop(), &uv_args->work_req, queue_work_wrapper, queue_after_wrapper);
 	if (r) {
 		promise_set(f->value, nullptr);
@@ -1412,9 +1412,11 @@ static void_t queue_work_ex(params_t args) {
 	}
 
 	uv_args->is_working = true;
+	yield();
 	while (uv_args->is_working)
 		coro_yield_info();
 
+	yield();
 	return nullptr;
 }
 
@@ -1467,20 +1469,21 @@ future queue_work(thrd_func_t fn, size_t num_args, ...) {
 }
 
 template_t queue_get(void_t queue) {
+	promise *p = nullptr;
+	future f = nullptr;
 	if (is_future(queue) || is_promise(queue)) {
 		if (is_future(queue)) {
-			future f = (future)queue;
+			f = (future)queue;
 			if (is_promise(f->value)) {
+				p = (promise *)f->value;
 				atomic_flag_test_and_set(&f->started);
-				yield();
-				while (!atomic_flag_load(&f->value->done))
+				while (!atomic_flag_load(&p->done))
 					coro_yield_info();
 
-				return f->value->result->value;
+				return p->result->value;
 			}
 		} else if (is_promise(queue)) {
-			yield();
-			promise *p = (promise *)queue;
+			p = (promise *)queue;
 			while (!atomic_flag_load(&p->done))
 				coro_yield_info();
 
@@ -1635,12 +1638,12 @@ static void_t stream_yield(params_t args) {
     return 0;
 }
 
-RAII_INLINE async_state *async_state_handle_get(void_t handle) {
+RAII_INLINE async_state *handle_getasync_state(void_t handle) {
 	uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(handle));
 	return uv->state;
 }
 
-RAII_INLINE async_state *async_state_req_get(void_t req) {
+RAII_INLINE async_state *req_getasync_state(void_t req) {
 	uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(req));
 	return uv->state;
 }
@@ -1737,7 +1740,8 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port
 				defer((func_t)tls_config_free, uv_args->ctx);
 				if (tls_config_set_ciphers(uv_args->ctx, ASYNC_TLS_CIPHERS) < 0
 					|| tls_config_set_protocols(uv_args->ctx, ASYNC_TLS_PROTOCOLS) < 0
-					|| tls_config_set_ca_file(uv_args->ctx, cert_file()) < 0
+					//|| tls_config_set_ca_file(uv_args->ctx, X509_get_default_cert_file()) < 0
+					//|| tls_config_set_ca_path(uv_args->ctx, X509_get_default_cert_dir()) < 0
 					|| tls_config_set_keypair_file(uv_args->ctx, cert_file(), pkey_file()) < 0) {
 					fprintf(stderr, "failed to set connect: %s\n", tls_config_error(uv_args->ctx));
 					return nullptr;

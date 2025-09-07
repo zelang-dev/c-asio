@@ -1,10 +1,15 @@
-cmake_minimum_required(VERSION 3.11...3.14)
+cmake_minimum_required(VERSION 3.14...4.0)
 
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
     cmake_policy(SET CMP0135 NEW)
 endif()
 
-project(asio LANGUAGES C)
+project(asio
+    VERSION 1.0.0
+    DESCRIPTION "A memory safe focus `C framework`, combining RAII, libuv, coroutine, and other concurrency primitives."
+    HOMEPAGE_URL "https://zelang-dev.github.io/c-asio/"
+	LANGUAGES C
+)
 
 set(CMAKE_C_STANDARD 90)
 
@@ -20,7 +25,7 @@ set(CMAKE_CONFIGURATION_TYPES=Debug;Release)
 set(BUILD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BUILD_DIR})
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/built")
-set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake;${CMAKE_MODULE_PATH}")
+set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(raii QUIET)
 if(NOT raii_FOUND)
@@ -43,8 +48,8 @@ endif()
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.4.zip
-        URL_MD5 8b36facb05b61b9e0b0f29c354abb520
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.5.zip
+        URL_MD5 ff135f215921480ce824c1c1f73374e7
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
@@ -62,11 +67,11 @@ set(lib_files
 
 add_library(${PROJECT_NAME} STATIC ${lib_files})
 add_library(ASIO::ASYNC ALIAS ${PROJECT_NAME})
-target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${RAII_INCLUDE_DIR}
+target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${RAII_INCLUDE_DIR}
 	$<INSTALL_INTERFACE:${RAII_INCLUDE_DIR})
-target_include_directories(${PROJECT_NAME}	PUBLIC $<BUILD_INTERFACE:${OPENTLS_INCLUDE_DIR}
+target_include_directories(${PROJECT_NAME}	PRIVATE $<BUILD_INTERFACE:${OPENTLS_INCLUDE_DIR}
 	$<INSTALL_INTERFACE:${OPENTLS_INCLUDE_DIR})
-target_include_directories(${PROJECT_NAME}	PUBLIC $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}
+target_include_directories(${PROJECT_NAME}	PRIVATE $<BUILD_INTERFACE:${OPENSSL_INCLUDE_DIR}
 	$<INSTALL_INTERFACE:${OPENSSL_INCLUDE_DIR})
 target_include_directories(${PROJECT_NAME} PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -79,7 +84,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC opentls)
 target_link_libraries(${PROJECT_NAME} PUBLIC uv_a)
 target_link_libraries(${PROJECT_NAME} PUBLIC raii)
 
-set_property(TARGET asio PROPERTY POSITION_INDEPENDENT_CODE True)
+set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE True)
 
 if(UNIX)
     if(APPLE)
@@ -96,7 +101,7 @@ endif()
 
 find_package(ZLIB CONFIG)
 if(ZLIB_FOUND)
-    target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+    target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
     message(STATUS "Cmake FindZLIB: using ZLIB includes at: ${ZLIB_INCLUDE_DIR}")
     message(STATUS "Cmake FindZLIB: using ZLIB libraries: ${ZLIB_LIBRARIES}")
 else()
@@ -111,7 +116,7 @@ else()
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "Build tests" FORCE)
     set(ZLIB_BUILD_MINIZIP OFF CACHE BOOL "Build libminizip" FORCE)
     set(ZLIB_INSTALL ON CACHE BOOL "Install zlib" FORCE)
-    target_include_directories(${PROJECT_NAME} PUBLIC $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+    target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
 endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${ZLIB_LIBRARIES})
 
@@ -129,8 +134,8 @@ if(ENABLE_ASAN AND CMAKE_BUILD_TYPE MATCHES Debug)
         set(ASAN_COMPILE_FLAG "-fsanitize=address")
         set(ASAN_LINK_FLAG "-fsanitize=address")
     endif()
-    target_compile_options(asio PUBLIC ${ASAN_COMPILE_FLAG})
-    target_link_options(asio PUBLIC ${ASAN_LINK_FLAG})
+    target_compile_options(${PROJECT_NAME} PUBLIC ${ASAN_COMPILE_FLAG})
+    target_link_options(${PROJECT_NAME} PUBLIC ${ASAN_LINK_FLAG})
 endif()
 
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -145,6 +150,9 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
         add_subdirectory(tests)
     endif()
 endif()
+
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
+set_target_properties(${PROJECT_NAME} PROPERTIES SOVERSION ${PROJECT_VERSION_MAJOR})
 
 set(_fmt TGZ)
 if(WIN32)
@@ -161,10 +169,85 @@ set(CPACK_NSIS_MODIFY_PATH ON)
 set(CPACK_COMPONENTS_ALL_IN_ONE_PACKAGE 1)
 set(CPACK_VERBATIM_VARIABLES YES)
 
-set(CPACK_PACKAGE_VENDOR "https://github.com/zelang-dev/c-asio")
-set(CPACK_PACKAGE_VERSION 1.0.0)
-include(CPack)
+set(CPACK_SOURCE_IGNORE_FILES
+	"~$"
+	"\\\\.svn/"
+	"/CMakeFiles/"
+	"/CMakeCache*"
+	"/cmake_install\\\\.cmake$"
+	"/cmake_uninstall\\\\.cmake$"
+	"^_CPack_.*/"
+	"/CPack*"
+	"\\\\.o$"
+	"/m4/"
+	"/build/"
+	"/built/"
+)
+
+set(INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}
+    CACHE PATH "Location of header files" )
+
+set(SYSCONFIG_INSTALL_DIR ${CMAKE_INSTALL_SYSCONFDIR}/${PROJECT_NAME}
+    CACHE PATH "Location of configuration files" )
+
+configure_package_config_file(asioConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/asioConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  PATH_VARS INCLUDE_INSTALL_DIR SYSCONFIG_INSTALL_DIR)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/asioConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion )
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/asioConfig.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/asioConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME} )
 
 set(CMAKE_INSTALL_CONFIG_NAME ${CMAKE_BUILD_TYPE})
+
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_ARCHIVE_OUTPUT_DIRECTORY}/Package")
+set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME})
+set(CPACK_PACKAGE_INSTALL_DIRECTORY ${PROJECT_NAME})
+
+set(CPACK_PACKAGE_CONTACT "lstubbs@zelang.dev")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Lawrence Stubbs <${CPACK_PACKAGE_CONTACT}>")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+SET(CPACK_COMPONENT_LIBRARIES_DISPLAY_NAME "C framework library")
+SET(CPACK_COMPONENT_LIBRARIES_DESCRIPTION "A memory safe focus `C framework`, combining RAII, libuv, coroutine, and other concurrency primitives.")
+
+set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.md)
+set(CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_SOURCE_DIR}/README.md)
+
+set(CPACK_PACKAGE_VENDOR "https://github.com/zelang-dev")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION ${PROJECT_DESCRIPTION})
+
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_URL "https://zelang-dev.github.io/c-asio/")
+set(CPACK_RPM_PACKAGE_ARCHITECTURE "noarch")
+
+set(CMAKE_INSTALL_CONFIG_NAME ${CMAKE_BUILD_TYPE})
+install(
+    TARGETS ${PROJECT_NAME} raii uv opentls
+    EXPORT "${PROJECT_NAME}Targets"
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+install(
+    EXPORT "${PROJECT_NAME}Targets"
+    FILE "${PROJECT_NAME}Targets.cmake"
+    NAMESPACE ASIO::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+)
+
 install(TARGETS ${PROJECT_NAME} DESTINATION lib)
-install(DIRECTORY include/ DESTINATION include)
+file(GLOB HEADER_LIST "include/*.h")
+install(FILES ${HEADER_LIST} DESTINATION include)
+
+set(CPACK_INSTALL_CMAKE_CONFIGURATIONS Release)
+include(CPack)
