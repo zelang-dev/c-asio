@@ -91,6 +91,7 @@ typedef enum {
 	ssl_generate_pkey = ca_file + 1,
 	ssl_export_file,
 	ssl_create_self,
+	ssl_x509_pkey_write,
 	ssl_worker
 } thrd_worker_types;
 
@@ -846,6 +847,11 @@ static void_t thrd_worker_thread(args_t args) {
 			}
 			EVP_PKEY_free(pkey);
 			break;
+		case ssl_x509_pkey_write:
+			pkey = args[1].object;
+			x509 = args[2].object;
+			no_error = create_self_ex(pkey, x509);
+			break;
 		case ssl_export_file: {
 			struct x509_request x509_req;
 			string name = nullptr, passphrase = nullptr;
@@ -1004,25 +1010,31 @@ X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain)
     return x509;
 }
 
-bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
+RAII_INLINE bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext) {
 	future fut = queue_work(thrd_worker_thread, 4, casting(ssl_create_self), pkey, x509, path_noext);
 
 	return queue_get(fut).boolean;
 }
 
-bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
+RAII_INLINE bool x509_pkey_write(EVP_PKEY *pkey, X509 *x509) {
+	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_x509_pkey_write), pkey, x509);
+
+	return queue_get(fut).boolean;
+}
+
+RAII_INLINE bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext) {
 	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), pkey, path_noext);
 
     return queue_get(fut).boolean;
 }
 
-bool csr_x509_export(X509_REQ *req, string_t path_noext) {
+RAII_INLINE bool csr_x509_export(X509_REQ *req, string_t path_noext) {
 	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), req, path_noext);
 
     return queue_get(fut).boolean;
 }
 
-bool cert_x509_export(X509 *cert, string_t path_noext) {
+RAII_INLINE bool cert_x509_export(X509 *cert, string_t path_noext) {
 	future fut = queue_work(thrd_worker_thread, 3, casting(ssl_export_file), cert, path_noext);
 
     return queue_get(fut).boolean;

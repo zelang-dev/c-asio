@@ -5,9 +5,10 @@
 
 void new_connection(uv_stream_t *socket) {
 	string data = stream_read(socket);
-	printf(CLR_LN"%s\n", data);
-	if (data)
+	if (data) {
 		stream_write(socket, data);
+		stream_flush(socket);
+	}
 }
 
 int uv_main(int argc, char **argv) {

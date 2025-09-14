@@ -434,7 +434,7 @@ C_API tty_err_t *tty_err(void);
 C_API string stream_read(uv_stream_t *);
 C_API string stream_read_once(uv_stream_t *);
 C_API string stream_read_wait(uv_stream_t *);
-C_API int stream_write(uv_stream_t *, string_t text);
+C_API int stream_write(uv_stream_t *, string_t data);
 C_API int stream_shutdown(uv_stream_t *);
 
 /*
@@ -456,6 +456,7 @@ C_API uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, in
 *
 * NOTE: Combines `uv_listen` and `uv_accept`. */
 C_API uv_stream_t *stream_listen(uv_stream_t *, int backlog);
+C_API int stream_flush(uv_stream_t *);
 
 /*
 * Parse `address` separating `scheme`, `host`, and `port`.
@@ -539,6 +540,7 @@ C_API void queue_delete(future);
 
 C_API uv_loop_t *asio_loop(void);
 C_API void_t asio_abort(void_t, int, routine_t *);
+C_API void asio_switch(routine_t *);
 
 /* For displaying Cpu core count, library version, and OS system info from `uv_os_uname()`. */
 C_API string_t asio_uname(void);
@@ -564,18 +566,14 @@ C_API bool is_tty_err(void_t);
 C_API bool is_addrinfo(void_t);
 C_API bool is_nameinfo(void_t);
 
-C_API bool is_promise(void_t);
-C_API bool is_future(void_t);
-
 /* This library provides its own ~main~,
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 C_API u32 delay(u32 ms);
 
 typedef struct {
-	volatile bool ready;
-	size_t max;
 	ssize_t status;
+	size_t max;
 	unsigned char *buf;
 	routine_t *thread;
 } async_state;
@@ -585,57 +583,6 @@ C_API async_state *req_getasync_state(void_t);
 
 C_API sockaddr_t *sockaddr(string_t host, int port);
 
-#ifdef _WIN32
-#define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")
-#define _BIO_MODE_W(flags) (((flags) & PKCS7_BINARY) ? "wb" : "w")
-#else
-#define _BIO_MODE_R(flags) "r"
-#define _BIO_MODE_W(flags) "w"
-#endif
-/* OpenSSL Certificate */
-typedef struct certificate_object ASIO_cert_t;
-
-/* OpenSSL AsymmetricKey */
-typedef struct pkey_object ASIO_pkey_t;
-
-/* OpenSSL Certificate Signing Request */
-typedef struct x509_request_object ASIO_req_t;
-
-C_API bool is_pkey(void_t);
-C_API bool is_cert_req(void_t);
-C_API bool is_cert(void_t);
-
-C_API string_t cert_file(void);
-C_API string_t pkey_file(void);
-C_API string_t csr_file(void);
-
-C_API void ASIO_ssl_error(void);
-C_API void ASIO_ssl_init(void);
-
-C_API ASIO_pkey_t *pkey_create(u32 num_pairs, ...);
-C_API ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
-C_API ASIO_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
-
-C_API X509* csr_sign(ASIO_req_t *,
-                     ASIO_cert_t *,
-                     ASIO_pkey_t *,
-                     int days,
-                     int serial,
-					 arrays_t options);
-
-C_API X509 *x509_get(string_t file_path);
-C_API EVP_PKEY *pkey_get(string_t file_path);
-C_API string x509_str(X509 *cert, bool show_details);
-
-C_API bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext);
-C_API bool csr_x509_export(X509_REQ *req, string_t path_noext);
-C_API bool cert_x509_export(X509 *cert, string_t path_noext);
-
-C_API EVP_PKEY *rsa_pkey(int keylength);
-C_API X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
-C_API bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext);
-
-C_API void use_certificate(string path, u32 ctx_pairs, ...);
 #ifdef __cplusplus
 }
 #endif

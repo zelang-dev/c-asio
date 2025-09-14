@@ -8,16 +8,8 @@
 #include <openssl/ossl_typ.h>
 #include <stdbool.h>
 #include <tls.h>
+#include <rtypes.h>
 #include <uv.h>
-
-// https://wiki.mozilla.org/Security/Server_Side_TLS
-// https://wiki.mozilla.org/index.php?title=Security/Server_Side_TLS&oldid=1080944
-// "Modern" compatibility ciphersuite
-#define ASYNC_TLS_CIPHERS "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-DSS-AES128-GCM-SHA256:kEDH+AESGCM:ECDHE-RSA-AES128-SHA256:ECDHE-ECDSA-AES128-SHA256:ECDHE-RSA-AES128-SHA:ECDHE-ECDSA-AES128-SHA:ECDHE-RSA-AES256-SHA384:ECDHE-ECDSA-AES256-SHA384:ECDHE-RSA-AES256-SHA:ECDHE-ECDSA-AES256-SHA:DHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA256:DHE-RSA-AES256-SHA256:DHE-DSS-AES256-SHA:DHE-RSA-AES256-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK"
-
-// According to SSL Labs, enabling TLS1.1 doesn't do any good...
-// Not 100% sure about its status in IE11 though.
-#define ASYNC_TLS_PROTOCOLS (TLS_PROTOCOLS_DEFAULT)
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +20,8 @@ typedef struct tls tls_s;
 typedef struct {
 	uv_tcp_t *stream;
 	tls_s *secure;
+	unsigned flags;
+	int err;
 	void *data;
 	char *buf;
 } async_tls_t;
@@ -40,8 +34,62 @@ char const *async_tls_error(async_tls_t  *const socket);
 
 char *async_tls_read(async_tls_t *const socket);
 ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const buf, size_t const len);
+int async_tls_flush(async_tls_t *const socket);
 
 ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t const max);
+
+#ifdef _WIN32
+#define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")
+#define _BIO_MODE_W(flags) (((flags) & PKCS7_BINARY) ? "wb" : "w")
+#else
+#define _BIO_MODE_R(flags) "r"
+#define _BIO_MODE_W(flags) "w"
+#endif
+/* OpenSSL Certificate */
+typedef struct certificate_object ASIO_cert_t;
+
+/* OpenSSL AsymmetricKey */
+typedef struct pkey_object ASIO_pkey_t;
+
+/* OpenSSL Certificate Signing Request */
+typedef struct x509_request_object ASIO_req_t;
+
+C_API bool is_pkey(void_t);
+C_API bool is_cert_req(void_t);
+C_API bool is_cert(void_t);
+
+C_API string_t cert_file(void);
+C_API string_t pkey_file(void);
+C_API string_t csr_file(void);
+
+C_API void ASIO_ssl_error(void);
+C_API void ASIO_ssl_init(void);
+
+C_API ASIO_pkey_t *pkey_create(u32 num_pairs, ...);
+C_API ASIO_req_t *csr_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+C_API ASIO_cert_t *x509_create(EVP_PKEY *pkey, u32 num_pairs, ...);
+
+C_API X509 *csr_sign(ASIO_req_t *,
+	ASIO_cert_t *,
+	ASIO_pkey_t *,
+	int days,
+	int serial,
+	arrays_t options);
+
+C_API X509 *x509_get(string_t file_path);
+C_API EVP_PKEY *pkey_get(string_t file_path);
+C_API string x509_str(X509 *cert, bool show_details);
+
+C_API bool pkey_x509_export(EVP_PKEY *pkey, string_t path_noext);
+C_API bool csr_x509_export(X509_REQ *req, string_t path_noext);
+C_API bool cert_x509_export(X509 *cert, string_t path_noext);
+C_API bool x509_pkey_write(EVP_PKEY *pkey, X509 *x509);
+
+C_API EVP_PKEY *rsa_pkey(int keylength);
+C_API X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
+C_API bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext);
+
+C_API void use_certificate(string path, u32 ctx_pairs, ...);
 
 #ifdef __cplusplus
 }
