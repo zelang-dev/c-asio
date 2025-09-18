@@ -1,9 +1,9 @@
-add_subdirectory(evt_tls)
 
 set(TARGET_LIST
  helloworld
  spawn
  tcp-echo-server
+ fetch
  uvcat
  uvtee
  onchange
@@ -14,6 +14,8 @@ set(TARGET_LIST
  create-x509
  waitgroup_work
 )
+
+file(COPY ../cert.pem DESTINATION ${CMAKE_BINARY_DIR})
 
 foreach (TARGET ${TARGET_LIST})
     add_executable(${TARGET} ${TARGET}.c)

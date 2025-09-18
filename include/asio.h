@@ -72,6 +72,7 @@ typedef enum {
     ASIO_SSL_CERT,
     ASIO_SSL_REQ,
     ASIO_SSL_PKEY,
+    ASIO_ASYNC_TLS,
     ASIO_THIS,
     ASIO_ARGS = ASIO_THIS + UV_HANDLE_TYPE_MAX
 } asio_types;
@@ -353,7 +354,7 @@ C_API spawn_t spawn(string_t command, string_t args, spawn_options_t *options);
 C_API int spawn_atexit(spawn_t, spawn_cb exit_func);
 C_API bool is_spawning(spawn_t);
 C_API int spawn_handler(spawn_t child, spawn_handler_cb std_func);
-C_API int spawn_pid(spawn_t);
+C_API uv_pid_t spawn_pid(spawn_t);
 C_API int spawn_signal(spawn_t, int sig);
 C_API int spawn_detach(spawn_t);
 
@@ -436,6 +437,7 @@ C_API string stream_read_once(uv_stream_t *);
 C_API string stream_read_wait(uv_stream_t *);
 C_API int stream_write(uv_stream_t *, string_t data);
 C_API int stream_shutdown(uv_stream_t *);
+C_API bool stream_canceled(uv_stream_t *);
 
 /*
 * Parse `address` separating `scheme`, `host`, and `port`.
@@ -445,7 +447,8 @@ C_API int stream_shutdown(uv_stream_t *);
 *
 * NOTE: Combines `uv_pipe_connect`, `uv_tcp_connect`, `uv_ip4_addr`, `uv_ip6_addr`. */
 C_API uv_stream_t *stream_connect(string_t address);
-C_API uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, int port);
+C_API uv_stream_t *stream_secure(string_t address, string_t name, int port);
+C_API uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t name, int port);
 
 /*
 * Starts listing for `new` incoming connections on the given `stream` handle.
@@ -578,8 +581,8 @@ typedef struct {
 	routine_t *thread;
 } async_state;
 
-C_API async_state *handle_getasync_state(void_t);
-C_API async_state *req_getasync_state(void_t);
+C_API async_state *get_handle_tls_state(void_t);
+C_API async_tls_t *get_handle_tls_socket(void_t);
 
 C_API sockaddr_t *sockaddr(string_t host, int port);
 

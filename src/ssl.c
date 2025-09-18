@@ -19,6 +19,7 @@
 
 static char default_ssl_conf_filename[UV_MAXHOSTNAMESIZE];
 static char asio_directory[UV_MAXHOSTNAMESIZE] = nil;
+static char asio_ca_cert[UV_MAXHOSTNAMESIZE + 4] = nil;
 static char asio_cert[UV_MAXHOSTNAMESIZE + 4] = nil;
 static char asio_csr[UV_MAXHOSTNAMESIZE + 4] = nil;
 static char asio_pkey[UV_MAXHOSTNAMESIZE + 4] = nil;
@@ -1322,7 +1323,7 @@ void ASIO_ssl_error(void) {
     if (!error_code)
         return;
 
-    fprintf(stderr, "Error: %s"CLR_LN, ERR_error_string(ERR_get_error(), buf));
+    cerr("Error: %s"CLR_LN, ERR_error_string(ERR_get_error(), buf));
 }
 
 RAII_INLINE bool is_pkey(void_t self) {
@@ -1350,6 +1351,25 @@ static void cert_names_setup(void) {
 	return (string_t)asio_cert;
 }
 
+void use_ca_certificate(string_t path) {
+	if (is_str_empty((string_t)asio_ca_cert)) {
+		int r = is_empty((void_t)path)
+			? snprintf(asio_ca_cert, sizeof(asio_ca_cert), "%s", X509_get_default_cert_file())
+			: snprintf(asio_ca_cert, sizeof(asio_ca_cert), "%s", path);
+
+		if (!r) {
+			RAII_LOG("Invalid ca trust certificate");
+		}
+	}
+}
+
+RAII_INLINE string_t ca_cert_file(void) {
+	if (is_str_empty((string_t)asio_ca_cert))
+		use_ca_certificate(nullptr);
+
+	return (string_t)asio_ca_cert;
+}
+
 RAII_INLINE string_t cert_file(void) {
 	if (is_str_empty((string_t)asio_cert))
 		cert_names_setup();
@@ -1357,7 +1377,7 @@ RAII_INLINE string_t cert_file(void) {
 	return (string_t)asio_cert;
 }
 
-RAII_INLINE string_t default_cert_file(string path) {
+static string_t default_cert_file(string path) {
 	string name = (string)asio_hostname();
 #ifdef _WIN32
 	string dir = is_empty(path) ? "..\\" : path;

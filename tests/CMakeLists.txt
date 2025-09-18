@@ -17,6 +17,9 @@ set(TARGET_LIST
 add_executable(child child.c)
 target_link_libraries(child ${PROJECT_NAME})
 
+add_executable(client client.c)
+target_link_libraries(client ${PROJECT_NAME})
+
 foreach (TARGET ${TARGET_LIST})
     add_executable(${TARGET} ${TARGET}.c )
     target_link_libraries(${TARGET} ${PROJECT_NAME})

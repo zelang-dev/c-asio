@@ -18,12 +18,16 @@ extern "C" {
 typedef struct tls_config tls_config_t;
 typedef struct tls tls_s;
 typedef struct {
+	raii_type type;
+	int err;
+	bool is_client;
+	bool is_server;
+	bool is_connecting;
+	unsigned flags;
+	char *buf;
+	void *data;
 	uv_tcp_t *stream;
 	tls_s *secure;
-	unsigned flags;
-	int err;
-	void *data;
-	char *buf;
 } async_tls_t;
 
 int async_tls_accept(async_tls_t *const server, async_tls_t *const socket);
@@ -36,7 +40,9 @@ char *async_tls_read(async_tls_t *const socket);
 ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const buf, size_t const len);
 int async_tls_flush(async_tls_t *const socket);
 
-ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t const max);
+bool is_tls_selfserver(void);
+void tls_selfserver_set(void);
+void tls_selfserver_clear(void);
 
 #ifdef _WIN32
 #define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")
@@ -58,6 +64,7 @@ C_API bool is_pkey(void_t);
 C_API bool is_cert_req(void_t);
 C_API bool is_cert(void_t);
 
+C_API string_t ca_cert_file(void);
 C_API string_t cert_file(void);
 C_API string_t pkey_file(void);
 C_API string_t csr_file(void);
@@ -89,6 +96,7 @@ C_API EVP_PKEY *rsa_pkey(int keylength);
 C_API X509 *x509_self(EVP_PKEY *pkey, string_t country, string_t org, string_t domain);
 C_API bool x509_self_export(EVP_PKEY *pkey, X509 *x509, string_t path_noext);
 
+C_API void use_ca_certificate(string_t path);
 C_API void use_certificate(string path, u32 ctx_pairs, ...);
 
 #ifdef __cplusplus

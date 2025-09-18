@@ -9,32 +9,76 @@ enum {
 	http_outgoing = 1 << 2,
 };
 
-
+static volatile bool tls_is_self_signed = false;
 static int tlserr(int const rc, struct tls *const secure) {
 	if (0 == rc) return 0;
 	RAII_ASSERT(-1 == rc);
 #ifdef USE_DEBUG
-	fprintf(stderr, "TLS error: %s\n", tls_error(secure));
+	cerr("TLS error: %s"CLR_LN, tls_error(secure));
 	SSL_load_error_strings();
 	char x[255 + 1];
 	ERR_error_string_n(ERR_get_error(), x, sizeof(x));
-	fprintf(stderr, "SSL error: %s\n", x);
+	cerr("SSL error: %s"CLR_LN, x);
 #endif
 	return UV_EPROTO;
 }
 
-static int tls_poll(uv_stream_t *const stream, int const event) {
+static void tls_alloc_cb(uv_handle_t *const handle, size_t const suggested_size, uv_buf_t *const buf) {
+	async_state *const state = get_handle_tls_state(handle);
+	buf->base = (char *)state->buf;
+	buf->len = state->max;
+}
+
+static void tls_yield_cb(uv_stream_t *const stream, ssize_t const nread, uv_buf_t const *const buf) {
+	async_state *const state = get_handle_tls_state(stream);
+	state->status = nread ? nread : UV_EAGAIN;
+	uv_read_stop(stream);
+	asio_switch(state->thread);
+}
+
+static ssize_t async_read(async_tls_t *const socket, unsigned char *const buf, size_t const max) {
+	if (!socket) return UV_EINVAL;
+	async_state *state = get_handle_tls_state(socket->stream);
+	bool is_client_only = socket->is_client && !socket->is_server;
 	int rc;
+
+	state->thread = coro_active();
+	state->status = 0;
+	state->buf = buf;
+	state->max = max;
+	if (is_client_only)
+		coro_enqueue(coro_running());
+
+	do {
+		rc = uv_read_start(streamer(socket->stream), tls_alloc_cb, tls_yield_cb);
+		if (rc < 0) return rc;
+		if (socket->is_connecting)
+			rc = uv_run(asio_loop(), INTERRUPT_MODE);
+		else if (is_client_only)
+			coro_suspend();
+		else
+			yield();
+
+		uv_read_stop(streamer(socket->stream));
+		if (rc < 0) return rc;
+		rc = state->status;
+	} while (UV_EAGAIN == rc);
+	if (UV_EOF == rc) return 0;
+	if (UV_ENOBUFS == rc && 0 == max) rc = 0;
+
+	return rc;
+}
+
+static int tls_poll(async_tls_t *const socket, int const event) {
+	int rc = event;
 	if (TLS_WANT_POLLIN == event) {
-		rc = async_read(stream, nullptr, 0);
+		rc = async_read(socket, nullptr, 0);
 		if (UV_ENOBUFS == rc) rc = 0;
 	} else if (TLS_WANT_POLLOUT == event) {
 		// TODO: libuv provides NO WAY to wait until a stream is
 		// writable! Even our zero-length write hack doesn't work.
 		// uv_poll can't be used on uv's own stream fds.
 		rc = delay(25) >= 0 ? 0 : RAII_ERR;
-	} else {
-		rc = event;
 	}
 
 	return rc;
@@ -57,9 +101,43 @@ int async_tls_accept(async_tls_t *const server, async_tls_t *const socket) {
 		for (;;) {
 			event = tls_handshake(socket->secure);
 			if (0 == event) break;
-			rc = tlserr(tls_poll(streamer(socket->stream), event), socket->secure);
+			rc = tlserr(tls_poll(socket, event), socket->secure);
 			if (rc < 0) goto cleanup;
 		}
+	}
+
+cleanup:
+	if (rc < 0)	async_tls_close(socket);
+	return rc;
+}
+
+int async_tls_connect(char const *const host, async_tls_t *const socket) {
+	int event = 0, rc = 0;
+	uv_os_fd_t fd;
+
+	if (!socket) return UV_EINVAL;
+	socket->secure = tls_client();
+	if (!socket->secure) rc = UV_ENOMEM;
+	if (rc < 0) goto cleanup;
+
+	if (tls_is_self_signed)
+		tls_config_insecure_noverifycert((struct tls_config *)socket->data);
+	else
+		tls_config_verify((struct tls_config *)socket->data);
+
+	rc = tls_configure(socket->secure, (struct tls_config *)socket->data);
+	if (rc < 0)	goto cleanup;
+
+	rc = uv_fileno((uv_handle_t *)socket->stream, &fd);
+	if (rc < 0)	goto cleanup;
+	rc = tlserr(tls_connect_socket(socket->secure, (int)fd, host), socket->secure);
+	if (rc < 0)	goto cleanup;
+
+	for (;;) {
+		event = tls_handshake(socket->secure);
+		if (0 == event) break;
+		rc = tlserr(tls_poll(socket, event), socket->secure);
+		if (rc < 0)	goto cleanup;
 	}
 
 cleanup:
@@ -67,51 +145,34 @@ cleanup:
 	return rc;
 }
 
-int async_tls_connect(char const *const host, async_tls_t *const socket) {
-	int event, rc;
-	uv_os_fd_t fd;
+bool is_tls_selfserver(void) {
+	return tls_is_self_signed;
+}
 
-	if (!socket)
-		return UV_EINVAL;
+void tls_selfserver_set(void) {
+	tls_is_self_signed = true;
+}
 
-	socket->secure = tls_client();
-	if (!socket->secure)
-		rc = UV_ENOMEM;
-	if (rc < 0) goto cleanup;
-
-	rc = tls_configure(socket->secure, (struct tls_config *)socket->data);
-	if (rc < 0)	goto cleanup;
-
-	rc = uv_fileno((uv_handle_t *)socket->stream, &fd);
-	if (rc < 0)	goto cleanup;
-
-	rc = tlserr(tls_connect_socket(socket->secure, fd, host), socket->secure);
-	if (rc < 0)	goto cleanup;
-
-	for (;;) {
-		if (!(event = tls_handshake(socket->secure)))
-			break;
-
-		rc = tlserr(tls_poll((uv_stream_t *)socket->stream, event), socket->secure);
-		if (rc < 0)	goto cleanup;
-	}
-
-cleanup:
-	if (rc < 0)
-		async_tls_close(socket);
-
-	return rc;
+void tls_selfserver_clear(void) {
+	tls_is_self_signed = false;
 }
 
 void async_tls_close(async_tls_t *const socket) {
 	if (!socket)
 		return;
 
-	if (socket->err != UV_EOF && socket->secure)
-		tls_close(socket->secure);
+	if (is_type(socket, (raii_type)ASIO_ASYNC_TLS)) {
+		socket->type = RAII_ERR;
+		if (socket->err != UV_EOF && socket->secure)
+			tls_close(socket->secure);
 
-	tls_free(socket->secure);
-	socket->secure = nullptr;
+		tls_free(socket->secure);
+		socket->secure = nullptr;
+		if (!is_empty(socket->buf)) {
+			RAII_FREE(socket->buf);
+			socket->buf = nullptr;
+		}
+	}
 }
 
 bool async_tls_is_secure(async_tls_t *const socket) {
@@ -138,7 +199,6 @@ string async_tls_read(async_tls_t *const socket) {
 		socket->buf = nullptr;
 	}
 
-	yield();
 	for (;;) {
 		ssize_t x = tls_read(socket->secure, buf, max);
 		if (x >= 0) {
@@ -146,7 +206,7 @@ string async_tls_read(async_tls_t *const socket) {
 			return buf;
 		}
 
-		if (tlserr(tls_poll(streamer(socket->stream), (const int)x), socket->secure) < 0)
+		if (tlserr(tls_poll(socket, (int)x), socket->secure) < 0)
 			return asio_abort(buf, x, co);
 	}
 
@@ -158,48 +218,11 @@ ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const bu
 	for (;;) {
 		ssize_t x = tls_write(socket->secure, buf, len);
 		if (x >= 0) return x;
-		int rc = tlserr(tls_poll(streamer(socket->stream), (const int)x), socket->secure);
+		int rc = tlserr(tls_poll(socket, (int)x), socket->secure);
 		if (rc < 0) return rc;
 	}
 	RAII_ASSERT(0);
 	return UV_UNKNOWN; // Not reached
-}
-
-static void tls_alloc_cb(uv_handle_t *const handle, size_t const suggested_size, uv_buf_t *const buf) {
-	async_state *const state = handle_getasync_state(handle);
-	buf->base = (char *)state->buf;
-	buf->len = state->max;
-}
-
-static void tls_yield_cb(uv_stream_t *const stream, ssize_t const nread, uv_buf_t const *const buf) {
-	async_state *const state = handle_getasync_state(stream);
-	state->status = nread ? nread : UV_EAGAIN;
-	uv_read_stop(stream);
-	asio_switch(state->thread);
-}
-
-ssize_t async_read(uv_stream_t *const stream, unsigned char *const buf, size_t const max) {
-	if (!stream) return UV_EINVAL;
-	async_state *state = handle_getasync_state(stream);
-	int rc;
-
-	state->thread = coro_active();
-	state->status = 0;
-	state->buf = buf;
-	state->max = max;
-
-	do {
-		rc = uv_read_start(stream, tls_alloc_cb, tls_yield_cb);
-		if (rc < 0) return rc;
-		rc = uv_run(asio_loop(), INTERRUPT_MODE);
-		uv_read_stop(stream);
-		if (rc < 0) return rc;
-		rc = state->status;
-	} while (UV_EAGAIN == rc);
-	if (UV_EOF == rc) return 0;
-	if (UV_ENOBUFS == rc && 0 == max) rc = 0;
-
-	return rc;
 }
 
 int async_tls_flush(async_tls_t *const socket) {
