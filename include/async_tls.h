@@ -26,9 +26,11 @@ typedef struct {
 	unsigned flags;
 	char *buf;
 	void *data;
-	uv_tcp_t *stream;
+	uv_stream_t *stream;
 	tls_s *secure;
 } async_tls_t;
+
+#define TLS_EOF 0xa000126
 
 int async_tls_accept(async_tls_t *const server, async_tls_t *const socket);
 int async_tls_connect(char const *const host, async_tls_t *const socket);
@@ -38,7 +40,9 @@ char const *async_tls_error(async_tls_t  *const socket);
 
 char *async_tls_read(async_tls_t *const socket);
 ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const buf, size_t const len);
+
 int async_tls_flush(async_tls_t *const socket);
+int async_tls_peek(async_tls_t *const socket);
 
 bool is_tls_selfserver(void);
 void tls_selfserver_set(void);

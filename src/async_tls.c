@@ -1,3 +1,7 @@
+/*
+Modified from  https://github.com/btrask/libasync/blob/master/src/async_tls.c
+*/
+
 #include "asio.h"
 
 #define READ_BUFFER (1024 * 8)
@@ -10,11 +14,14 @@ enum {
 };
 
 static volatile bool tls_is_self_signed = false;
+static size_t tls_read_size = READ_BUFFER;
+static size_t tls_write_size = WRITE_BUFFER;
+
 static int tlserr(int const rc, struct tls *const secure) {
 	if (0 == rc) return 0;
 	RAII_ASSERT(-1 == rc);
 #ifdef USE_DEBUG
-	cerr("TLS error: %s"CLR_LN, tls_error(secure));
+	cerr("\n\nTLS error: %s"CLR_LN, tls_error(secure));
 	SSL_load_error_strings();
 	char x[255 + 1];
 	ERR_error_string_n(ERR_get_error(), x, sizeof(x));
@@ -50,7 +57,7 @@ static ssize_t async_read(async_tls_t *const socket, unsigned char *const buf, s
 		coro_enqueue(coro_running());
 
 	do {
-		rc = uv_read_start(streamer(socket->stream), tls_alloc_cb, tls_yield_cb);
+		rc = uv_read_start(socket->stream, tls_alloc_cb, tls_yield_cb);
 		if (rc < 0) return rc;
 		if (socket->is_connecting)
 			rc = uv_run(asio_loop(), INTERRUPT_MODE);
@@ -59,11 +66,11 @@ static ssize_t async_read(async_tls_t *const socket, unsigned char *const buf, s
 		else
 			yield();
 
-		uv_read_stop(streamer(socket->stream));
+		uv_read_stop(socket->stream);
 		if (rc < 0) return rc;
 		rc = state->status;
 	} while (UV_EAGAIN == rc);
-	if (UV_EOF == rc) return 0;
+	if (UV_EOF == rc) return rc;
 	if (UV_ENOBUFS == rc && 0 == max) rc = 0;
 
 	return rc;
@@ -84,14 +91,45 @@ static int tls_poll(async_tls_t *const socket, int const event) {
 	return rc;
 }
 
+int async_tls_peek(async_tls_t *const socket) {
+	if (async_tls_is_secure(socket)) {
+		// Don't reserve memory while blocking.
+		if (!is_empty(socket->buf)) {
+			free(socket->buf);
+			socket->buf = nullptr;
+		}
+
+		ssize_t x = tls_read(socket->secure, nullptr, 0);
+		if (x >= 0) return x;
+		if (x == -1 && ERR_get_error() == TLS_EOF) return UV_EOF;
+		return x;
+	} else {
+		async_state *state = get_handle_tls_state(socket->stream);
+		state->thread = coro_active();
+		state->status = RAII_ERR;
+		state->buf = nullptr;
+		state->max = 0;
+
+		int rc = uv_read_start(socket->stream, tls_alloc_cb, tls_yield_cb);
+		if (rc < 0) return rc;
+
+		yield();
+		while (RAII_ERR == state->status)
+			yield();
+
+		uv_read_stop(socket->stream);
+		return state->status;
+	}
+}
+
 int async_tls_accept(async_tls_t *const server, async_tls_t *const socket) {
 	uv_os_fd_t fd;
 	int event, rc;
 
 	if (!server || !socket) return UV_EINVAL;
-	rc = uv_tcp_init(asio_loop(), socket->stream);
+	rc = uv_tcp_init(asio_loop(), (uv_tcp_t *)socket->stream);
 	if (rc < 0) goto cleanup;
-	rc = uv_accept((uv_stream_t *)server->stream, (uv_stream_t *)socket->stream);
+	rc = uv_accept(server->stream, socket->stream);
 	if (rc < 0) goto cleanup;
 	if (server->secure) {
 		rc = uv_fileno((uv_handle_t *)socket->stream, &fd);
@@ -101,7 +139,9 @@ int async_tls_accept(async_tls_t *const server, async_tls_t *const socket) {
 		for (;;) {
 			event = tls_handshake(socket->secure);
 			if (0 == event) break;
-			rc = tlserr(tls_poll(socket, event), socket->secure);
+			event = tls_poll(socket, event);
+			if (event == UV_EOF) event = 0;
+			rc = tlserr(event, socket->secure);
 			if (rc < 0) goto cleanup;
 		}
 	}
@@ -136,7 +176,9 @@ int async_tls_connect(char const *const host, async_tls_t *const socket) {
 	for (;;) {
 		event = tls_handshake(socket->secure);
 		if (0 == event) break;
-		rc = tlserr(tls_poll(socket, event), socket->secure);
+		event = tls_poll(socket, event);
+		if (event == UV_EOF) event = 0;
+		rc = tlserr(event, socket->secure);
 		if (rc < 0)	goto cleanup;
 	}
 
@@ -187,8 +229,8 @@ string_t async_tls_error(async_tls_t *const socket) {
 }
 
 string async_tls_read(async_tls_t *const socket) {
-	string buf = calloc(1, READ_BUFFER + 1);
-	size_t const max = READ_BUFFER;
+	string buf = calloc(1, tls_read_size + 1);
+	size_t const max = tls_read_size;
 	routine_t *co = coro_active();
 
 	if (!buf)
@@ -206,7 +248,14 @@ string async_tls_read(async_tls_t *const socket) {
 			return buf;
 		}
 
-		if (tlserr(tls_poll(socket, (int)x), socket->secure) < 0)
+		if (x == -1 && ERR_get_error() == TLS_EOF) {
+			free(buf);
+			return nullptr;
+		}
+
+		x = tls_poll(socket, (int)x);
+		if (x == UV_EOF) x = 0;
+		if (tlserr(x, socket->secure) < 0)
 			return asio_abort(buf, x, co);
 	}
 
@@ -218,7 +267,9 @@ ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const bu
 	for (;;) {
 		ssize_t x = tls_write(socket->secure, buf, len);
 		if (x >= 0) return x;
-		int rc = tlserr(tls_poll(socket, (int)x), socket->secure);
+		x = tls_poll(socket, (int)x);
+		if (x == UV_EOF) x = 0;
+		int rc = tlserr(x, socket->secure);
 		if (rc < 0) return rc;
 	}
 	RAII_ASSERT(0);

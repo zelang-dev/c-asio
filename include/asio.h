@@ -460,6 +460,7 @@ C_API uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, st
 * NOTE: Combines `uv_listen` and `uv_accept`. */
 C_API uv_stream_t *stream_listen(uv_stream_t *, int backlog);
 C_API int stream_flush(uv_stream_t *);
+C_API int stream_peek(uv_stream_t *);
 
 /*
 * Parse `address` separating `scheme`, `host`, and `port`.

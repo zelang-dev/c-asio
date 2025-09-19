@@ -340,8 +340,8 @@ static void uv_catch_error(uv_args_t *uv) {
 }
 
 static void connect_cb(uv_connect_t *client, int status) {
-    uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(client));
-    routine_t *co = uv->context;
+	uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(client));
+	routine_t *co = uv->context;
 
     if (status < 0)
         uv_log_error(status);
@@ -355,8 +355,8 @@ static void on_connect(uv_connect_t *req, int status) {
 	uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(req));
 	async_tls_t *socket = uv->tls;
 
-	if (!status) {
-		socket->stream = (uv_tcp_t *)req->handle;
+	if (status == 0) {
+		socket->stream = req->handle;
 		socket->data = (void_t)uv->ctx;
 		socket->buf = nullptr;
 		socket->is_client = true;
@@ -384,7 +384,7 @@ static void connection_cb(uv_stream_t *server, int status) {
 			if (!is_empty(handle)) {
 				client_args = uv_arguments(1, false);
 				client_args->bind_type = UV_TLS;
-				client_args->tls->stream = handle;
+				client_args->tls->stream = streamer(handle);
 				client_args->tls->data = nullptr;
 				client_args->tls->buf = nullptr;
 				client_args->tls->err = 0;
@@ -1542,6 +1542,7 @@ int stream_write(uv_stream_t *handle, string_t data) {
 		uv_args->args[0].object = handle;
 	} else {
 		uv_args = uv_arguments(1, true);
+		uv_args->tls->stream = handle;
         $append(uv_args->args, handle);
         uv_handle_set_data(handler(handle), (void_t)uv_args);
     }
@@ -1562,7 +1563,8 @@ RAII_INLINE string stream_read_wait(uv_stream_t *handle) {
     uv_args_t *uv_args = nullptr;
     void_t check = uv_handle_get_data(handler(handle));
     if (is_empty(check)) {
-        uv_args = uv_arguments(1, true);
+		uv_args = uv_arguments(1, true);
+		uv_args->tls->stream = handle;
         $append(uv_args->args, handle);
         uv_handle_set_data(handler(handle), (void_t)uv_args);
     } else {
@@ -1671,7 +1673,8 @@ static string stream_get(uv_stream_t *handle) {
 			if (uv_args->bind_type == UV_TLS)
 				return async_tls_read(uv_args->tls);
         } else if (is_empty(uv_args)) {
-            uv_args = uv_arguments(1, false);
+			uv_args = uv_arguments(1, false);
+			uv_args->tls->stream = handle;
             uv_args->bind_type = RAII_NO_INSTANCE;
             $append(uv_args->args, handle);
         } else if (is_undefined(uv_args)) {
@@ -1699,7 +1702,8 @@ int stream_shutdown(uv_stream_t *handle) {
     if (is_defined(uv_args)) {
         uv_args->args[0].object = handle;
     } else {
-        uv_args = uv_arguments(1, true);
+		uv_args = uv_arguments(1, true);
+		uv_args->tls->stream = handle;
         $append(uv_args->args, handle);
         uv_handle_set_data(handler(handle), (void_t)uv_args);
     }
@@ -1717,11 +1721,11 @@ uv_stream_t *stream_connect(string_t address) {
     if (is_empty(url))
         return nullptr;
 
-    return stream_connect_ex(url->type, (string_t)url->host, (string_t)url->host, url->port);
+	return stream_connect_ex(url->type, (string_t)url->host, (string_t)url->host, (url->port == 0 ? 80 : url->port));
 }
 
 RAII_INLINE uv_stream_t *stream_secure(string_t address, string_t name, int port) {
-	return stream_connect_ex(UV_TLS, address, name, port);
+	return stream_connect_ex(UV_TLS, address, name, (port == 0 ? 443 : port));
 }
 
 uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t name, int port) {
@@ -1781,6 +1785,8 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t
 
 	if (uv_args->bind_type == UV_TLS)
 		defer((func_t)async_tls_close, uv_args->tls);
+	else
+		uv_args->tls->stream = streamer(handle);
 
 	return streamer(handle);
 }
@@ -1807,6 +1813,10 @@ uv_stream_t *stream_listen(uv_stream_t *stream, int backlog) {
 
 RAII_INLINE int stream_flush(uv_stream_t *stream) {
 	return async_tls_flush(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
+}
+
+RAII_INLINE int stream_peek(uv_stream_t *stream) {
+	return async_tls_peek(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
 }
 
 uv_stream_t *stream_bind(string_t address, int flags) {
@@ -1865,7 +1875,6 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 				}
 
 				handle = tcp_create();
-				uv_args->tls->stream = handle;
 				uv_args->tls->data = uv_args->ctx;
 				uv_args->tls->buf = nullptr;
 				uv_args->tls->is_server = true;
@@ -1896,7 +1905,8 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
     $append_string(uv_args->args, address);
     $append_signed(uv_args->args, port);
 
-    uv_args->bind_type = scheme;
+	uv_args->bind_type = scheme;
+	uv_args->tls->stream = streamer(handle);
 	uv_handle_set_data(handler(handle), (void_t)uv_args);
 
     return streamer(handle);
@@ -2330,7 +2340,8 @@ pipepair_t *pipepair_create(bool is_ipc) {
     uv_args_t *uv_args = uv_arguments(1, true);
     uv_args_t *uv_args2 = uv_arguments(1, true);
     $append(uv_args->args, pair->reader);
-    $append(uv_args2->args, pair->writer);
+	$append(uv_args2->args, pair->writer);
+	uv_args->tls->stream = pair->reader;
     uv_handle_set_data(handler(pair->reader), (void_t)uv_args);
     uv_handle_set_data(handler(pair->writer), (void_t)uv_args2);
     defer(uv_close_deferred, pair);
@@ -2380,7 +2391,8 @@ tty_in_t *tty_in(void) {
         return asio_abort(tty, r, coro_active());
     }
 
-    uv_args_t *uv_args = uv_arguments(1, true);
+	uv_args_t *uv_args = uv_arguments(1, true);
+	uv_args->tls->stream = tty->reader;
     $append(uv_args->args, tty->reader);
     uv_handle_set_data(handler(tty->reader), (void_t)uv_args);
     defer(uv_close_deferred, tty);
