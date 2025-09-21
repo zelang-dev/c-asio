@@ -31,8 +31,8 @@ struct uv_args_s {
     uv_getaddrinfo_t addinfo_req;
     udp_packet_t *packet_req;
 	tls_config_t *ctx;
-	async_state state[1];
-	async_tls_t tls[1];
+	tls_state state[1];
+	uv_tls_t tls[1];
 	uv_stat_t stat[1];
     uv_statfs_t statfs[1];
     scandir_t dir[1];
@@ -331,7 +331,7 @@ static void uv_catch_error(uv_args_t *uv) {
 	}
 
 	if (uv->bind_type == UV_TLS)
-		async_tls_close(uv->tls);
+		uv_tls_close(uv->tls);
 
 	if (!uv->is_freeable)
         uv_arguments_free(uv);
@@ -353,7 +353,7 @@ static void connect_cb(uv_connect_t *client, int status) {
 
 static void on_connect(uv_connect_t *req, int status) {
 	uv_args_t *uv = (uv_args_t *)uv_req_get_data(requester(req));
-	async_tls_t *socket = uv->tls;
+	uv_tls_t *socket = uv->tls;
 
 	if (status == 0) {
 		socket->stream = req->handle;
@@ -363,7 +363,7 @@ static void on_connect(uv_connect_t *req, int status) {
 		socket->is_server = false;
 		socket->is_connecting = true;
 		socket->type = ASIO_ASYNC_TLS;
-		status = async_tls_connect((string_t)uv->args[3].char_ptr, socket);
+		status = uv_tls_connect((string_t)uv->args[3].char_ptr, socket);
 		socket->is_connecting = false;
 	}
 
@@ -393,10 +393,10 @@ static void connection_cb(uv_stream_t *server, int status) {
 				client_args->tls->is_server= true;
 				client_args->tls->is_connecting = true;
 				client_args->tls->type = ASIO_ASYNC_TLS;
-				result = async_tls_accept(uv->tls, client_args->tls);
+				result = uv_tls_accept(uv->tls, client_args->tls);
 				client_args->tls->is_connecting = false;
 				if (result) {
-					async_tls_close(client_args->tls);
+					uv_tls_close(client_args->tls);
 					uv_close(handler(handle), nullptr);
 					uv_arguments_free(client_args);
 				}
@@ -1509,14 +1509,14 @@ static void_t stream_client(params_t args) {
     uv_stream_t *client = (uv_stream_t *)args[0].object;
     stream_cb handlerFunc = (stream_cb)args[1].func;
 	uv_args_t *uv = (uv_args_t *)uv_handle_get_data(handler(client));
-	async_tls_t *tls = uv->tls;
+	uv_tls_t *tls = uv->tls;
 	bool is_tls = false;
 
 	if (uv->bind_type == UV_TLS) {
 		is_tls = true;
 		defer((func_t)uv_arguments_free, uv);
 		defer(uv_close_deferred, client);
-		defer((func_t)async_tls_close, tls);
+		defer((func_t)uv_tls_close, tls);
 	} else {
         uv_handle_set_data(handler(client), nullptr);
         defer(uv_close_free, client);
@@ -1551,7 +1551,7 @@ int stream_write(uv_stream_t *handle, string_t data) {
     uv_args->bufs = uv_buf_init((string)data, (unsigned int)size);
 
 	if (uv_args->bind_type == UV_TLS)
-		return async_tls_write(uv_args->tls, uv_args->bufs.base, uv_args->bufs.len);
+		return uv_tls_write(uv_args->tls, uv_args->bufs.base, uv_args->bufs.len);
 
 	return uv_start(uv_args, UV_WRITE, 1, true).integer;
 }
@@ -1640,11 +1640,11 @@ static void_t stream_yield(params_t args) {
     return 0;
 }
 
-RAII_INLINE async_state *get_handle_tls_state(void_t handle) {
+RAII_INLINE tls_state *get_handle_tls_state(void_t handle) {
 	return ((uv_args_t *)uv_handle_get_data(handler(handle)))->state;
 }
 
-RAII_INLINE async_tls_t *get_handle_tls_socket(void_t handle) {
+RAII_INLINE uv_tls_t *get_handle_tls_socket(void_t handle) {
 	return ((uv_args_t *)uv_handle_get_data(handler(handle)))->tls;
 }
 
@@ -1671,7 +1671,7 @@ static string stream_get(uv_stream_t *handle) {
 		if (is_defined(uv_args)) {
 			uv_args->args[0].object = handle;
 			if (uv_args->bind_type == UV_TLS)
-				return async_tls_read(uv_args->tls);
+				return uv_tls_read(uv_args->tls);
         } else if (is_empty(uv_args)) {
 			uv_args = uv_arguments(1, false);
 			uv_args->tls->stream = handle;
@@ -1784,7 +1784,7 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t
 		return nullptr;
 
 	if (uv_args->bind_type == UV_TLS)
-		defer((func_t)async_tls_close, uv_args->tls);
+		defer((func_t)uv_tls_close, uv_args->tls);
 	else
 		uv_args->tls->stream = streamer(handle);
 
@@ -1812,11 +1812,11 @@ uv_stream_t *stream_listen(uv_stream_t *stream, int backlog) {
 }
 
 RAII_INLINE int stream_flush(uv_stream_t *stream) {
-	return async_tls_flush(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
+	return uv_tls_flush(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
 }
 
 RAII_INLINE int stream_peek(uv_stream_t *stream) {
-	return async_tls_peek(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
+	return uv_tls_peek(((uv_args_t *)uv_handle_get_data(handler(stream)))->tls);
 }
 
 uv_stream_t *stream_bind(string_t address, int flags) {

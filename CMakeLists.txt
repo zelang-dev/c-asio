@@ -60,7 +60,7 @@ if(NOT opentls_FOUND)
 endif()
 
 set(lib_files
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/async_tls.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/uv_tls.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/asio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ssl.c
 )

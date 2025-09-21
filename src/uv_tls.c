@@ -31,21 +31,21 @@ static int tlserr(int const rc, struct tls *const secure) {
 }
 
 static void tls_alloc_cb(uv_handle_t *const handle, size_t const suggested_size, uv_buf_t *const buf) {
-	async_state *const state = get_handle_tls_state(handle);
+	tls_state *const state = get_handle_tls_state(handle);
 	buf->base = (char *)state->buf;
 	buf->len = state->max;
 }
 
 static void tls_yield_cb(uv_stream_t *const stream, ssize_t const nread, uv_buf_t const *const buf) {
-	async_state *const state = get_handle_tls_state(stream);
+	tls_state *const state = get_handle_tls_state(stream);
 	state->status = nread ? nread : UV_EAGAIN;
 	uv_read_stop(stream);
 	asio_switch(state->thread);
 }
 
-static ssize_t async_read(async_tls_t *const socket, unsigned char *const buf, size_t const max) {
+static ssize_t async_read(uv_tls_t *const socket, unsigned char *const buf, size_t const max) {
 	if (!socket) return UV_EINVAL;
-	async_state *state = get_handle_tls_state(socket->stream);
+	tls_state *state = get_handle_tls_state(socket->stream);
 	bool is_client_only = socket->is_client && !socket->is_server;
 	int rc;
 
@@ -76,7 +76,7 @@ static ssize_t async_read(async_tls_t *const socket, unsigned char *const buf, s
 	return rc;
 }
 
-static int tls_poll(async_tls_t *const socket, int const event) {
+static int tls_poll(uv_tls_t *const socket, int const event) {
 	int rc = event;
 	if (TLS_WANT_POLLIN == event) {
 		rc = async_read(socket, nullptr, 0);
@@ -91,8 +91,8 @@ static int tls_poll(async_tls_t *const socket, int const event) {
 	return rc;
 }
 
-int async_tls_peek(async_tls_t *const socket) {
-	if (async_tls_is_secure(socket)) {
+int uv_tls_peek(uv_tls_t *const socket) {
+	if (uv_tls_is_secure(socket)) {
 		// Don't reserve memory while blocking.
 		if (!is_empty(socket->buf)) {
 			free(socket->buf);
@@ -104,7 +104,7 @@ int async_tls_peek(async_tls_t *const socket) {
 		if (x == -1 && ERR_get_error() == TLS_EOF) return UV_EOF;
 		return x;
 	} else {
-		async_state *state = get_handle_tls_state(socket->stream);
+		tls_state *state = get_handle_tls_state(socket->stream);
 		state->thread = coro_active();
 		state->status = RAII_ERR;
 		state->buf = nullptr;
@@ -122,7 +122,7 @@ int async_tls_peek(async_tls_t *const socket) {
 	}
 }
 
-int async_tls_accept(async_tls_t *const server, async_tls_t *const socket) {
+int uv_tls_accept(uv_tls_t *const server, uv_tls_t *const socket) {
 	uv_os_fd_t fd;
 	int event, rc;
 
@@ -147,11 +147,11 @@ int async_tls_accept(async_tls_t *const server, async_tls_t *const socket) {
 	}
 
 cleanup:
-	if (rc < 0)	async_tls_close(socket);
+	if (rc < 0)	uv_tls_close(socket);
 	return rc;
 }
 
-int async_tls_connect(char const *const host, async_tls_t *const socket) {
+int uv_tls_connect(char const *const host, uv_tls_t *const socket) {
 	int event = 0, rc = 0;
 	uv_os_fd_t fd;
 
@@ -183,7 +183,7 @@ int async_tls_connect(char const *const host, async_tls_t *const socket) {
 	}
 
 cleanup:
-	if (rc < 0) async_tls_close(socket);
+	if (rc < 0) uv_tls_close(socket);
 	return rc;
 }
 
@@ -199,7 +199,7 @@ void tls_selfserver_clear(void) {
 	tls_is_self_signed = false;
 }
 
-void async_tls_close(async_tls_t *const socket) {
+void uv_tls_close(uv_tls_t *const socket) {
 	if (!socket)
 		return;
 
@@ -217,18 +217,18 @@ void async_tls_close(async_tls_t *const socket) {
 	}
 }
 
-bool async_tls_is_secure(async_tls_t *const socket) {
+bool uv_tls_is_secure(uv_tls_t *const socket) {
 	if (!socket) return false;
 	return !!socket->secure;
 }
 
-string_t async_tls_error(async_tls_t *const socket) {
+string_t uv_tls_error(uv_tls_t *const socket) {
 	if (!socket) return nullptr;
 	if (!socket->secure) return nullptr;
 	return tls_error(socket->secure);
 }
 
-string async_tls_read(async_tls_t *const socket) {
+string uv_tls_read(uv_tls_t *const socket) {
 	string buf = calloc(1, tls_read_size + 1);
 	size_t const max = tls_read_size;
 	routine_t *co = coro_active();
@@ -263,7 +263,7 @@ string async_tls_read(async_tls_t *const socket) {
 	return coro_await_erred(co, UV_UNKNOWN); // Not reached
 }
 
-ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const buf, size_t const len) {
+ssize_t uv_tls_write(uv_tls_t *const socket, unsigned char const *const buf, size_t const len) {
 	for (;;) {
 		ssize_t x = tls_write(socket->secure, buf, len);
 		if (x >= 0) return x;
@@ -276,8 +276,8 @@ ssize_t async_tls_write(async_tls_t *const socket, unsigned char const *const bu
 	return UV_UNKNOWN; // Not reached
 }
 
-int async_tls_flush(async_tls_t *const socket) {
-	if (async_tls_is_secure(socket)) {
+int uv_tls_flush(uv_tls_t *const socket) {
+	if (uv_tls_is_secure(socket)) {
 		if (http_keepalive & socket->flags) return 0;
 		if (http_outgoing & socket->flags) return 0; // Don't close after sending request. Could use shutdown(2) here.
 		tls_close(socket->secure);

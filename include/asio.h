@@ -7,7 +7,7 @@
 
 #define INTERRUPT_MODE UV_RUN_NOWAIT
 
-#include "async_tls.h"
+#include "uv_tls.h"
 #include <url_http.h>
 #include <reflection.h>
 
@@ -580,10 +580,10 @@ typedef struct {
 	size_t max;
 	unsigned char *buf;
 	routine_t *thread;
-} async_state;
+} tls_state;
 
-C_API async_state *get_handle_tls_state(void_t);
-C_API async_tls_t *get_handle_tls_socket(void_t);
+C_API tls_state *get_handle_tls_state(void_t);
+C_API uv_tls_t *get_handle_tls_socket(void_t);
 
 C_API sockaddr_t *sockaddr(string_t host, int port);
 
