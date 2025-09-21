@@ -60,9 +60,10 @@ if(NOT opentls_FOUND)
 endif()
 
 set(lib_files
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/uv_tls.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/asio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ssl.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/uv_http.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/uv_tls.c
 )
 
 add_library(${PROJECT_NAME} STATIC ${lib_files})

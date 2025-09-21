@@ -17,7 +17,6 @@ extern "C" {
 
 typedef struct tls_config tls_config_t;
 typedef struct tls tls_s;
-typedef struct uv_tls_s uv_tls_t;
 typedef struct uv_tls_s {
 	raii_type type;
 	int err;
