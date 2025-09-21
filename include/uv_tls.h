@@ -6,10 +6,10 @@
 #include <openssl/conf.h>
 #include <openssl/engine.h>
 #include <openssl/ossl_typ.h>
-#include <stdbool.h>
-#include <tls.h>
 #include <rtypes.h>
+#include <tls.h>
 #include <uv.h>
+#include <url_http.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,36 +17,39 @@ extern "C" {
 
 typedef struct tls_config tls_config_t;
 typedef struct tls tls_s;
-typedef struct {
+typedef struct uv_tls_s uv_tls_t;
+typedef struct uv_tls_s {
 	raii_type type;
 	int err;
 	bool is_client;
 	bool is_server;
 	bool is_connecting;
 	unsigned flags;
-	char *buf;
-	void *data;
+	u32 retry;
+	string buf;
+	void_t data;
+	http_t *http;
 	uv_stream_t *stream;
 	tls_s *secure;
 } uv_tls_t;
 
 #define TLS_EOF 0xa000126
 
-int uv_tls_accept(uv_tls_t *const server, uv_tls_t *const socket);
-int uv_tls_connect(char const *const host, uv_tls_t *const socket);
-void uv_tls_close(uv_tls_t *const socket);
-bool uv_tls_is_secure(uv_tls_t *const socket);
-char const *uv_tls_error(uv_tls_t  *const socket);
+C_API int uv_tls_accept(uv_tls_t *const server, uv_tls_t *const socket);
+C_API int uv_tls_connect(char const *const host, uv_tls_t *const socket);
+C_API void uv_tls_close(uv_tls_t *const socket);
+C_API bool uv_tls_is_secure(uv_tls_t *const socket);
+C_API char const *uv_tls_error(uv_tls_t  *const socket);
 
-char *uv_tls_read(uv_tls_t *const socket);
-ssize_t uv_tls_write(uv_tls_t *const socket, unsigned char const *const buf, size_t const len);
+C_API char *uv_tls_read(uv_tls_t *const socket);
+C_API ssize_t uv_tls_write(uv_tls_t *const socket, unsigned char const *const buf, size_t const len);
 
-int uv_tls_flush(uv_tls_t *const socket);
-int uv_tls_peek(uv_tls_t *const socket);
+C_API int uv_tls_flush(uv_tls_t *const socket);
+C_API int uv_tls_peek(uv_tls_t *const socket);
 
-bool is_tls_selfserver(void);
-void tls_selfserver_set(void);
-void tls_selfserver_clear(void);
+C_API bool is_tls_selfserver(void);
+C_API void tls_selfserver_set(void);
+C_API void tls_selfserver_clear(void);
 
 #ifdef _WIN32
 #define _BIO_MODE_R(flags) (((flags) & PKCS7_BINARY) ? "rb" : "r")

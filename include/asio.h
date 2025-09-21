@@ -8,7 +8,6 @@
 #define INTERRUPT_MODE UV_RUN_NOWAIT
 
 #include "uv_tls.h"
-#include <url_http.h>
 #include <reflection.h>
 
 #ifdef _WIN32
