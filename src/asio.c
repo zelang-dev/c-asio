@@ -362,7 +362,7 @@ static void on_connect(uv_connect_t *req, int status) {
 		socket->is_client = true;
 		socket->is_server = false;
 		socket->is_connecting = true;
-		socket->type = ASIO_ASYNC_TLS;
+		socket->type = ASIO_TLS;
 		status = uv_tls_connect((string_t)uv->args[3].char_ptr, socket);
 		socket->is_connecting = false;
 	}
@@ -392,7 +392,7 @@ static void connection_cb(uv_stream_t *server, int status) {
 				client_args->tls->is_client = true;
 				client_args->tls->is_server= true;
 				client_args->tls->is_connecting = true;
-				client_args->tls->type = ASIO_ASYNC_TLS;
+				client_args->tls->type = ASIO_TLS;
 				result = uv_tls_accept(uv->tls, client_args->tls);
 				client_args->tls->is_connecting = false;
 				if (result) {
@@ -1880,7 +1880,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 				uv_args->tls->is_server = true;
 				uv_args->tls->is_client = false;
 				uv_args->tls->is_connecting = false;
-				uv_args->tls->type = ASIO_ASYNC_TLS;
+				uv_args->tls->type = ASIO_TLS;
 				r = uv_tcp_bind(handle, (sockaddr_t *)addr_set, flags);
 			} else {
 				cerr("failed to bind: `tls_config_new`\n");

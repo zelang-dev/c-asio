@@ -203,7 +203,7 @@ void uv_tls_close(uv_tls_t *const socket) {
 	if (!socket)
 		return;
 
-	if (is_type(socket, (raii_type)ASIO_ASYNC_TLS)) {
+	if (is_type(socket, (raii_type)ASIO_TLS)) {
 		socket->type = RAII_ERR;
 		if (socket->err != UV_EOF && socket->secure)
 			tls_close(socket->secure);

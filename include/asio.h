@@ -60,6 +60,7 @@ typedef enum {
     ASIO_PIPE,
     ASIO_TCP,
     ASIO_UDP,
+    ASIO_TLS,
     ASIO_SPAWN,
     ASIO_SOCKET,
     ASIO_PIPE_0,
@@ -71,7 +72,7 @@ typedef enum {
     ASIO_SSL_CERT,
     ASIO_SSL_REQ,
     ASIO_SSL_PKEY,
-    ASIO_ASYNC_TLS,
+    ASIO_HTTP,
     ASIO_THIS,
     ASIO_ARGS = ASIO_THIS + UV_HANDLE_TYPE_MAX
 } asio_types;
@@ -585,6 +586,14 @@ C_API tls_state *get_handle_tls_state(void_t);
 C_API uv_tls_t *get_handle_tls_socket(void_t);
 
 C_API sockaddr_t *sockaddr(string_t host, int port);
+
+/**
+ * Creates an `this` instance for `data` `asio_types`
+ * on current `coroutine` `user_data`.
+ *
+ * WILL `panic` ~logic_error~, if `user_data` not empty.
+ */
+C_API void uv_this(void_t *data, asio_types type);
 
 #ifdef __cplusplus
 }

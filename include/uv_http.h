@@ -11,6 +11,8 @@ extern "C" {
  * Make a GET request, will pause current task, and
  * continue other tasks until an response is received.
  *
+ * WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
+ *
  * @param path
  * @param type defaults to `text/html; charset=utf-8`, if empty
  * @param numof number of additional headers
@@ -21,11 +23,13 @@ extern "C" {
  *
  * - `or:` `kv_custom("key", "value")`
  */
-C_API string http_get(string path, string type, u32 numof, ...);
+C_API string uv_http_get(string path, string type, u32 numof, ...);
 
 /**
  * Make a POST request, will pause current task, and
  * continue other tasks until an response is received.
+ *
+ * WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
  *
  * @param path
  * @param data
@@ -38,11 +42,13 @@ C_API string http_get(string path, string type, u32 numof, ...);
  *
  * - `or:` `kv_custom("key", "value")`
  */
-C_API string http_post(string path, string data, string type, u32 numof, ...);
+C_API string uv_http_post(string path, string data, string type, u32 numof, ...);
 
 /**
 * Make a DELETE request, will pause current task, and
 * continue other tasks until an response is received.
+*
+* WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
 *
 * @param path
 * @param data
@@ -55,11 +61,13 @@ C_API string http_post(string path, string data, string type, u32 numof, ...);
 *
 * - `or:` `kv_custom("key", "value")`
 */
-C_API string http_delete(string path, string data, u32 numof, ...);
+C_API string uv_http_delete(string path, string data, u32 numof, ...);
 
 /**
 * Make a PATCH request, will pause current task, and
 * continue other tasks until an response is received.
+*
+* WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
 *
 * @param path
 * @param data
@@ -71,12 +79,14 @@ C_API string http_delete(string path, string data, u32 numof, ...);
 *
 * - `or:` `kv_custom("key", "value")`
 */
-C_API string http_patch(string path, string data, u32 numof, ...);
+C_API string uv_http_patch(string path, string data, u32 numof, ...);
 
 /**
 * Make a OPTIONS request, will pause current task, and
 * continue other tasks until an response is received.
 *
+* WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
+*
 * @param path
 * @param numof number of additional headers
 *
@@ -86,12 +96,14 @@ C_API string http_patch(string path, string data, u32 numof, ...);
 *
 * - `or:` `kv_custom("key", "value")`
 */
-C_API string http_options(string path, u32 numof, ...);
+C_API string uv_http_options(string path, u32 numof, ...);
 
 /**
 * Make a HEAD request, will pause current task, and
 * continue other tasks until an response is received.
 *
+* WILL `panic` ~logic_error~, if current `coroutine` user_data ~field~, not `ASIO_TLS`.
+*
 * @param path
 * @param numof number of additional headers
 *
@@ -101,13 +113,7 @@ C_API string http_options(string path, u32 numof, ...);
 *
 * - `or:` `kv_custom("key", "value")`
 */
-C_API string http_head(string path, u32 numof, ...);
-
-/**
- * Creates an `this` instance for `http_t`/`uv_tls_t`
- * on current `coroutine` ~connected~ `stream`.
- */
-C_API void http_this(uv_tls_t *socket);
+C_API string uv_http_head(string path, u32 numof, ...);
 
 #ifdef __cplusplus
 }
