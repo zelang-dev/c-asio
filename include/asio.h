@@ -573,6 +573,9 @@ C_API bool is_nameinfo(void_t);
 /* This library provides its own ~main~,
 which call this function as an coroutine! */
 C_API int uv_main(int, char **);
+
+/* Same as `sleepfor`, but uses `uv_timer_start` to explicitly give up the current `coroutine`
+for at least `ms` milliseconds. Other tasks continue to run during this time. */
 C_API u32 delay(u32 ms);
 
 typedef struct {
@@ -588,7 +591,7 @@ C_API uv_tls_t *get_handle_tls_socket(void_t);
 C_API sockaddr_t *sockaddr(string_t host, int port);
 
 /**
- * Creates an `this` instance for `data` `asio_types`
+ * Creates an `this` instance for `data` object by `asio_types`
  * on current `coroutine` `user_data`.
  *
  * WILL `panic` ~logic_error~, if `user_data` not empty.

@@ -339,7 +339,18 @@ which call this function as an coroutine! */
 C_API int uv_main(int, char **);
 
 C_API uv_loop_t *asio_loop(void);
+
+/* Same as `sleepfor`, but uses `uv_timer_start` to explicitly give up the current `coroutine`
+for at least `ms` milliseconds. Other tasks continue to run during this time. */
 C_API u32 delay(u32 ms);
+
+/**
+ * Creates an `this` instance for `data` object by `asio_types`
+ * on current `coroutine` `user_data`.
+ *
+ * WILL `panic` ~logic_error~, if `user_data` not empty.
+ */
+C_API void uv_this(void_t *data, asio_types type);
 
 C_API string fs_readfile(string_t path);
 C_API int fs_writefile(string_t path, string_t text);
