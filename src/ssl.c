@@ -1347,8 +1347,6 @@ static void cert_names_setup(void) {
 		|| !(snprintf(asio_self_touch, sizeof(asio_self_touch), "%s.local", name)))
 			RAII_INFO("Invalid certificate %s names: %s, %s, %s\n", name, asio_cert, asio_csr, asio_pkey);
 	}
-
-	return (string_t)asio_cert;
 }
 
 void use_ca_certificate(string_t path) {

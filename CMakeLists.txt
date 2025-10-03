@@ -30,8 +30,8 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(raii QUIET)
 if(NOT raii_FOUND)
     FetchContent_Declare(raii
-        URL https://github.com/zelang-dev/c-raii/archive/refs/tags/2.2.1.zip
-        URL_MD5 01aca7e52b6287ee50ec3e8060c3968c
+        URL https://github.com/zelang-dev/c-raii/archive/refs/tags/2.2.3.zip
+        URL_MD5 f1cc164554b8c3e64c709cb4e192878a
     )
     FetchContent_MakeAvailable(raii)
 endif()
@@ -42,14 +42,15 @@ if(NOT libuv_FOUND)
         URL https://github.com/libuv/libuv/archive/refs/tags/v1.51.0.zip
         URL_MD5 89997b2ecd52664fa117ffc82560f5eb
     )
+    add_definitions("/wd4701 /wd4245 /wd4244 /wd4244 /wd4267")
     FetchContent_MakeAvailable(libuv)
 endif()
 
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.8.zip
-        URL_MD5 e5f9f4b7ae0a2ed0939d954c9a698acd
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.9.zip
+        URL_MD5 bceb14cc4b24aa16b3da3805a26bc2fe
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
