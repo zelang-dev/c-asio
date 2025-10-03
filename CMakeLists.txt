@@ -42,7 +42,9 @@ if(NOT libuv_FOUND)
         URL https://github.com/libuv/libuv/archive/refs/tags/v1.51.0.zip
         URL_MD5 89997b2ecd52664fa117ffc82560f5eb
     )
-    add_definitions("/wd4701 /wd4245 /wd4244 /wd4244 /wd4267")
+	if(WIN32)
+    	add_definitions("/wd4701 /wd4245 /wd4244 /wd4267 /wd4334 /wd4152 /wd4702")
+    endif()
     FetchContent_MakeAvailable(libuv)
 endif()
 

@@ -2933,8 +2933,8 @@ main(int argc, char **argv) {
 	coro_stacksize_set(Kb(64));
 	ASIO_ssl_init();
 	CRYPTO_set_mem_functions(
-		(void_t(*)(long unsigned int, string_t, int))rp_malloc,
-		(void_t(*)(void_t, long unsigned int, string_t, int))rp_realloc,
+		(void_t(*)(size_t, string_t, int))rp_malloc,
+		(void_t(*)(void_t, size_t, string_t, int))rp_realloc,
 		(void(*)(void_t, string_t, int))rpfree);
 
 	return coro_start((coro_sys_func)uv_main, argc, argv, 0);

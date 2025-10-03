@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.11...3.14)
 
+if(WIN32)
+	add_definitions("/wd4477")
+endif()
+
 set(TARGET_LIST
  test-fs
  test-fs_open

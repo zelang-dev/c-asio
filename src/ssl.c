@@ -1128,7 +1128,6 @@ X509 *csr_sign(ASIO_req_t *csr_s, ASIO_cert_t *ca, ASIO_pkey_t *pkey, int days, 
     X509_REQ *csr;
     ASIO_cert_t *cert_object;
     hash_t *zpkey, *args = nullptr;
-    long num_days;
     X509 *cert = nullptr, *new_cert = nullptr;
     EVP_PKEY * key = nullptr, *priv_key = nullptr;
     int i;
@@ -1208,7 +1207,7 @@ X509 *csr_sign(ASIO_req_t *csr_s, ASIO_cert_t *ca, ASIO_pkey_t *pkey, int days, 
     }
 
     X509_gmtime_adj(X509_getm_notBefore(new_cert), 0);
-    X509_gmtime_adj(X509_getm_notAfter(new_cert), 60*60*24*(long)num_days);
+    X509_gmtime_adj(X509_getm_notAfter(new_cert), 60*60*24*(long)days);
     i = X509_set_pubkey(new_cert, key);
     if (!i) {
         ASIO_ssl_error();
