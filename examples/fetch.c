@@ -2,7 +2,7 @@
 
 int uv_main(int argc, char **argv) {
 	yield();
-	cli_message_set("\turl - website\n", false);
+	cli_message_set("\turl - website\n", 1, false);
 	if (is_cli_getopt(nullptr, true)) {
 		string data = nullptr;
 		int chunks = 0;

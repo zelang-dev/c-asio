@@ -14,7 +14,8 @@ void new_connection(uv_stream_t *socket) {
 int uv_main(int argc, char **argv) {
     uv_stream_t *client, *server;
 	char addr[UV_MAXHOSTNAMESIZE] = nil;
-	bool is_secure = (argc > 0 && is_str_eq(argv[1], "-s"));
+	cli_message_set("\t-s for `secure connection`\n", 0, false);
+	bool is_secure = is_cli_getopt("-s", true);
 	string_t host = is_secure ? "tls://127.0.0.1:%d" : "0.0.0.0:%d";
 
 	if (snprintf(addr, sizeof(addr), host, DEFAULT_PORT)) {
