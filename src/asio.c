@@ -101,7 +101,7 @@ static void uv_arguments_free(uv_args_t *self) {
 		if (!self->is_freeable) {
 			array_delete(self->args);
 			memset(self, RAII_ERR, sizeof(raii_type));
-			RAII_FREE(self);
+			free(self);
         }
     }
 }
@@ -161,7 +161,7 @@ static void uv_close_deferred(void_t handle) {
         uv_close(handler(handle), nullptr);
     }
 
-    RAII_FREE(handle);
+    free(handle);
 }
 
 static void _close_cb(uv_handle_t *handle) {
@@ -169,7 +169,7 @@ static void _close_cb(uv_handle_t *handle) {
         return;
 
     memset(handle, 0, sizeof(uv_handle_t));
-    RAII_FREE(handle);
+    free(handle);
 }
 
 static void uv_close_free(void_t handle) {
@@ -183,7 +183,7 @@ static void uv_close_free(void_t handle) {
 
 static void asio_closer(uv_args_t *uv) {
     if (uv->req_type == UV_GETNAMEINFO) {
-        RAII_FREE(uv->args[0].object);
+        free(uv->args[0].object);
     } else if (uv->req_type == UV_GETADDRINFO) {
         uv_freeaddrinfo((addrinfo_t *)uv->args[0].object);
     } else {
@@ -362,7 +362,7 @@ static void on_connect(uv_connect_t *req, int status) {
 		socket->is_client = true;
 		socket->is_server = false;
 		socket->is_connecting = true;
-		socket->type = ASIO_TLS;
+		socket->type = (raii_type)ASIO_TLS;
 		status = uv_tls_connect((string_t)uv->args[3].char_ptr, socket);
 		socket->is_connecting = false;
 	}
@@ -379,7 +379,7 @@ static void connection_cb(uv_stream_t *server, int status) {
 
 	if (status == 0) {
 		if (uv->bind_type == UV_TLS) {
-			handle = RAII_CALLOC(1, sizeof(uv_tcp_t));
+			handle = calloc(1, sizeof(uv_tcp_t));
 			result = UV_ENOMEM;
 			if (!is_empty(handle)) {
 				client_args = uv_arguments(1, false);
@@ -392,7 +392,7 @@ static void connection_cb(uv_stream_t *server, int status) {
 				client_args->tls->is_client = true;
 				client_args->tls->is_server= true;
 				client_args->tls->is_connecting = true;
-				client_args->tls->type = ASIO_TLS;
+				client_args->tls->type = (raii_type)ASIO_TLS;
 				result = uv_tls_accept(uv->tls, client_args->tls);
 				client_args->tls->is_connecting = false;
 				if (result) {
@@ -403,10 +403,10 @@ static void connection_cb(uv_stream_t *server, int status) {
 			}
 
         } else if (uv->bind_type == RAII_SCHEME_TCP) {
-            handle = RAII_CALLOC(1, sizeof(uv_tcp_t));
+            handle = calloc(1, sizeof(uv_tcp_t));
 			result = uv_tcp_init(uvLoop, (uv_tcp_t *)handle);
         } else if (uv->bind_type == RAII_SCHEME_PIPE) {
-            handle = RAII_CALLOC(1, sizeof(uv_pipe_t));
+            handle = calloc(1, sizeof(uv_pipe_t));
 			result = uv_pipe_init(uvLoop, (uv_pipe_t *)handle, 0);
         }
 
@@ -419,7 +419,7 @@ static void connection_cb(uv_stream_t *server, int status) {
 	if (result) {
 		uv_log_error(result);
         if (!is_empty(handle))
-            RAII_FREE(handle);
+			free(handle);
 
 		coro_err_set(co, result);
     }
@@ -434,7 +434,7 @@ static void getnameinfo_cb(uv_getnameinfo_t *req, int status, string_t hostname,
 
     uv->args[0].object = req;
     if (status < 0) {
-        info->type = RAII_ERR;
+		info->type = (asio_types)RAII_ERR;
         asio_abort(nullptr, status, co);
         asio_closer(uv);
     } else {
@@ -457,7 +457,7 @@ static void getaddrinfo_cb(uv_getaddrinfo_t *req, int status, struct addrinfo *r
     uv->args[0].object = res;
     if (status < 0) {
         dns->addr = nullptr;
-        dns->type = RAII_ERR;
+		dns->type = (asio_types)RAII_ERR;
         asio_abort(nullptr, status, co);
         asio_closer(uv);
     } else {
@@ -483,7 +483,7 @@ static void shutdown_cb(uv_shutdown_t *req, int status) {
     }
 
     coro_await_finish(co, nullptr, status, true);
-    RAII_FREE(req);
+    free(req);
 }
 
 static void write_cb(uv_write_t *req, int status) {
@@ -513,7 +513,7 @@ static void read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
         uv_read_stop(stream);
     } else if (nread > 0) {
         coro_await_finish(co, buf->base, nread, false);
-        RAII_FREE(buf->base);
+        free(buf->base);
     }
 }
 
@@ -616,7 +616,7 @@ static void fs_cb(uv_fs_t *req) {
     coro_await_finish(co, data, result, !override);
     if (fs_type != UV_FS_SCANDIR) {
         if (fs_type == UV_FS_READ)
-			RAII_FREE(fs->bufs.base);
+			free(fs->bufs.base);
 
 		fs_cleanup(req);
     }
@@ -792,7 +792,7 @@ static void_t uv_init(params_t uv_args) {
             case UV_SHUTDOWN:
                 req = (uv_req_t *)&uv->shutdown_req;
                 if (result = uv_shutdown((uv_shutdown_t *)req, streamer(stream), shutdown_cb))
-                    RAII_FREE(req);
+				free(req);
                 break;
             case UV_WORK:
                 break;
@@ -1426,11 +1426,11 @@ static void_t queue_work_ex(params_t args) {
 
 void queue_delete(future f) {
 	if (is_future(f)) {
-		f->type = RAII_ERR;
+		f->type = (raii_type)RAII_ERR;
 		if (!is_empty(f->scope))
 			raii_deferred_free(f->scope);
 
-		RAII_FREE(f);
+		free(f);
 	}
 }
 
@@ -1598,7 +1598,7 @@ static void read_generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t
 
         uv_read_stop(stream);
         if (buf->base)
-            RAII_FREE(buf->base);
+            free(buf->base);
 
         coro_await_erred(co, nread);
         coro_await_exit(co, nullptr, nread, false);
@@ -1606,7 +1606,7 @@ static void read_generator_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t
         uv->bufs.base = buf->base;
         uv->bufs.len = buf->len;
         coro_await_yield(co, buf->base, nread, false, true);
-        RAII_FREE(buf->base);
+        free(buf->base);
         uv->bufs.base = nullptr;
         if (uv->is_once)
             coro_await_exit(co, nullptr, nread, false);
@@ -1733,7 +1733,7 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t
     void_t addr_set = nullptr;
     void_t handle = nullptr;
 
-    if (scheme == RAII_SCHEME_PIPE || scheme == UV_NAMED_PIPE)
+	if (scheme == (uv_handle_type)RAII_SCHEME_PIPE || scheme == UV_NAMED_PIPE)
         addr_set = str_concat(2, SYS_PIPE, address);
     else
         addr_set = asio_sockaddr(address, port,
@@ -1745,11 +1745,11 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t
 
     switch (scheme) {
         case UV_NAMED_PIPE:
-        case RAII_SCHEME_PIPE:
+		case (uv_handle_type)RAII_SCHEME_PIPE:
             uv_args->bind_type = RAII_SCHEME_PIPE;
             handle = pipe_create(false);
             break;
-		case UV_TLS:
+		case (uv_handle_type)UV_TLS:
 			coro_name("tls_client #%d", coro_active_id());
 			uv_args->bind_type = UV_TLS;
 			uv_args->ctx = tls_config_new();
@@ -1769,7 +1769,7 @@ uv_stream_t *stream_connect_ex(uv_handle_type scheme, string_t address, string_t
 			}
             break;
         case UV_TCP:
-		case RAII_SCHEME_TCP:
+		case (uv_handle_type)RAII_SCHEME_TCP:
         default:
             uv_args->bind_type = RAII_SCHEME_TCP;
             handle = tcp_create();
@@ -1838,7 +1838,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 	uv_args_t *uv_args = uv_arguments(5, false);
 
 	defer_recover((func_t)uv_catch_error, uv_args);
-    if (scheme == RAII_SCHEME_PIPE)
+	if (scheme == (uv_handle_type)RAII_SCHEME_PIPE)
         addr_set = str_concat(2, SYS_PIPE, address);
     else
         addr_set = asio_sockaddr(address, port, uv_args->dns->in6, uv_args->dns->in4);
@@ -1848,13 +1848,13 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 
     switch (scheme) {
         case UV_NAMED_PIPE:
-        case RAII_SCHEME_PIPE:
+		case (uv_handle_type)RAII_SCHEME_PIPE:
             handle = pipe_create(false);
             r = uv_pipe_bind(handle, (string_t)addr_set);
             if (!r)
                 defer((func_t)fs_remove_pipe, uv_args);
             break;
-		case UV_TLS:
+		case (uv_handle_type)UV_TLS:
 			uv_args->ctx = tls_config_new();
 			if (uv_args->ctx) {
 				defer((func_t)tls_config_free, uv_args->ctx);
@@ -1880,7 +1880,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 				uv_args->tls->is_server = true;
 				uv_args->tls->is_client = false;
 				uv_args->tls->is_connecting = false;
-				uv_args->tls->type = ASIO_TLS;
+				uv_args->tls->type = (raii_type)ASIO_TLS;
 				r = uv_tcp_bind(handle, (sockaddr_t *)addr_set, flags);
 			} else {
 				cerr("failed to bind: `tls_config_new`\n");
@@ -1888,7 +1888,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
 			}
             break;
         case UV_TCP:
-		case RAII_SCHEME_TCP:
+		case (uv_handle_type)RAII_SCHEME_TCP:
         default:
             handle = tcp_create();
             r = uv_tcp_bind(handle, (sockaddr_t *)addr_set, flags);
@@ -1905,7 +1905,7 @@ uv_stream_t *stream_bind_ex(uv_handle_type scheme, string_t address, int port, i
     $append_string(uv_args->args, address);
     $append_signed(uv_args->args, port);
 
-	uv_args->bind_type = scheme;
+	uv_args->bind_type = (raii_type)scheme;
 	uv_args->tls->stream = streamer(handle);
 	uv_handle_set_data(handler(handle), (void_t)uv_args);
 
@@ -1965,7 +1965,7 @@ static void udp_generator_cb(uv_udp_t *req, ssize_t nread, const uv_buf_t *buf,
         uv_udp_recv_stop(req);
         uv_log_error(nread);
         if (uv->is_server && buf->base)
-            RAII_FREE(buf->base);
+            free(buf->base);
 
         coro_await_exit(co, nullptr, nread, true);
     } else if (nread == 0) {
@@ -2096,14 +2096,14 @@ RAII_INLINE udp_packet_t *udp_listen(uv_udp_t *handle) {
 static void udp_packet_free(udp_packet_t *handle) {
     if (is_udp_packet(handle)) {
         memset((void_t)handle, RAII_ERR, sizeof(asio_types));
-        RAII_FREE((void_t)handle);
+        free((void_t)handle);
     }
 }
 
 RAII_INLINE string_t udp_get_message(udp_packet_t *udpp) {
     if (udpp->message && udpp->message_set) {
         udpp->message_set = false;
-        defer(RAII_FREE, (void_t)udpp->message);
+        defer(free, (void_t)udpp->message);
     }
 
     return udpp->message;
@@ -2469,9 +2469,9 @@ static void spawn_free(spawn_t child) {
     if (uv_is_active(handle) || !uv_is_closing(handle))
         uv_close(handle, nullptr);
 
-    RAII_FREE(child->handle);
-    child->type = RAII_ERR;
-    RAII_FREE(child);
+    free(child->handle);
+    child->type = (asio_types)RAII_ERR;
+    free(child);
 }
 
 static void spawn_exit_cb(uv_process_t *handle, int64_t exit_status, int term_signal) {
@@ -2514,10 +2514,10 @@ static void_t spawning(params_t uv_args) {
     coro_err_set(co, uv_spawn(asio_loop(), child->process, child->handle->options));
     defer((func_t)spawn_free, child);
     if (!is_empty(child->handle->data))
-        RAII_FREE(child->handle->data);
+        free(child->handle->data);
 
     child->handle->data = (void_t)co;
-    RAII_FREE(uv->args[1].object);
+    free(uv->args[1].object);
     uv_arguments_free(uv);
 
 	if (!get_coro_err(co)) {
@@ -2602,7 +2602,7 @@ spawn_options_t *spawn_opts(string env, string_t cwd, int flags, uv_uid_t uid, u
         for (i = 0; i < no_of_stdio; i++) {
             p = va_arg(argp, uv_stdio_container_t *);
             memcpy(&handle->stdio[i], p, sizeof(uv_stdio_container_t));
-            RAII_FREE(p);
+            free(p);
         }
         va_end(argp);
     }
@@ -2630,7 +2630,7 @@ spawn_t spawn(string_t command, string_t args, spawn_options_t *handle) {
 
     string command_arg = str_cat_ex(nullptr, has_args, command, ",", args);
     string *command_args = str_split_ex(nullptr, command_arg, ",", nullptr);
-    RAII_FREE(command_arg);
+    free(command_arg);
     handle->options->args = command_args;
 
     process->handle = handle;
@@ -2802,7 +2802,7 @@ string_t asio_uname(void) {
                                          buffer->release);
 
         str_copy(asio_powered_by, powered_by, SCRAPE_SIZE);
-        RAII_FREE((void_t)powered_by);
+        free((void_t)powered_by);
     }
 
     return (string_t)asio_powered_by;
@@ -2826,7 +2826,7 @@ RAII_INLINE uv_loop_t *asio_loop(void) {
 
 void_t asio_abort(void_t handle, int err, routine_t *co) {
 	if (!is_empty(handle))
-		RAII_FREE(handle);
+		free(handle);
 
 	uv_log_error(err);
 	return coro_await_erred(co, err);
@@ -2840,11 +2840,11 @@ RAII_INLINE void asio_switch(routine_t *co) {
 static void asio_free(routine_t *coro, routine_t *co, uv_args_t *uv_args) {
     hash_free(get_coro_waitgroup(coro));
     raii_deferred_free(get_coro_scope(coro));
-    RAII_FREE(coro);
+    free(coro);
 
     hash_free(get_coro_waitgroup(co));
     raii_deferred_free(get_coro_scope(co));
-    RAII_FREE(co);
+    free(co);
 
     uv_arguments_free(uv_args);
 }
@@ -2896,7 +2896,7 @@ static void asio_shutdown(void_t t) {
             }
 
             uv_loop_close(loop);
-            RAII_FREE((void_t)loop);
+            free((void_t)loop);
             interrupt_handle_set(nullptr);
         }
     }

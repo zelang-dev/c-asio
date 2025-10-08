@@ -211,7 +211,7 @@ void uv_tls_close(uv_tls_t *const socket) {
 		tls_free(socket->secure);
 		socket->secure = nullptr;
 		if (!is_empty(socket->buf)) {
-			RAII_FREE(socket->buf);
+			free(socket->buf);
 			socket->buf = nullptr;
 		}
 	}
