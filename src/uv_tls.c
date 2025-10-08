@@ -134,7 +134,7 @@ int uv_tls_accept(uv_tls_t *const server, uv_tls_t *const socket) {
 	if (server->secure) {
 		rc = uv_fileno((uv_handle_t *)socket->stream, &fd);
 		if (rc < 0) goto cleanup;
-		rc = tlserr(tls_accept_socket(server->secure, &socket->secure, (int)fd), server->secure);
+		rc = tlserr(tls_accept_socket(server->secure, &socket->secure, (intptr_t)fd), server->secure);
 		if (rc < 0) goto cleanup;
 		for (;;) {
 			event = tls_handshake(socket->secure);
@@ -170,7 +170,7 @@ int uv_tls_connect(char const *const host, uv_tls_t *const socket) {
 
 	rc = uv_fileno((uv_handle_t *)socket->stream, &fd);
 	if (rc < 0)	goto cleanup;
-	rc = tlserr(tls_connect_socket(socket->secure, (int)fd, host), socket->secure);
+	rc = tlserr(tls_connect_socket(socket->secure, (intptr_t)fd, host), socket->secure);
 	if (rc < 0)	goto cleanup;
 
 	for (;;) {
@@ -204,7 +204,7 @@ void uv_tls_close(uv_tls_t *const socket) {
 		return;
 
 	if (is_type(socket, (raii_type)ASIO_TLS)) {
-		socket->type = RAII_ERR;
+		socket->type = RAII_INVALID;
 		if (socket->err != UV_EOF && socket->secure)
 			tls_close(socket->secure);
 
@@ -243,12 +243,12 @@ string uv_tls_read(uv_tls_t *const socket) {
 
 	for (;;) {
 		ssize_t x = tls_read(socket->secure, buf, max);
-		if (x >= 0) {
+		if (x > 0) {
 			socket->buf = buf;
 			return buf;
 		}
 
-		if (x == -1 && ERR_get_error() == TLS_EOF) {
+		if (x == 0 || (x == -1 && ERR_get_error() == TLS_EOF)) {
 			free(buf);
 			return nullptr;
 		}

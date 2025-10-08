@@ -51,8 +51,8 @@ endif()
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.10.zip
-        URL_MD5 f05265a31c83a28d6a0926062350337e
+        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.11.zip
+        URL_MD5 fc46dd989c4e61b1d6a6019ed3170f86
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
