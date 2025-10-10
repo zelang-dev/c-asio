@@ -2927,7 +2927,9 @@ u32 delay(u32 ms) {
 }
 
 main(int argc, char **argv) {
+	char cores[22];
 	uv_replace_allocator(rp_malloc, rp_realloc, rp_calloc, rpfree);
+	uv_os_setenv("UV_THREADPOOL_SIZE", simd_itoa((int64_t)thrd_cpu_count(), cores));
 	RAII_INFO("%s, %s\n\n", asio_uname(), asio_hostname());
 	coro_interrupt_setup((call_interrupter_t)uv_run, uv_create_loop, asio_shutdown);
 	coro_stacksize_set(Kb(64));
