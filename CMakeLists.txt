@@ -30,8 +30,8 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(raii QUIET)
 if(NOT raii_FOUND)
     FetchContent_Declare(raii
-        URL https://github.com/zelang-dev/c-raii/archive/refs/tags/2.2.4.zip
-        URL_MD5 0256bd86ca474383070bb1000d3f77c5
+        URL https://github.com/zelang-dev/c-raii/archive/refs/tags/2.3.1.zip
+        URL_MD5 c1867e16749033765d10d440ed99c919
     )
     FetchContent_MakeAvailable(raii)
 endif()
@@ -51,8 +51,8 @@ endif()
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/openTLS/archive/refs/tags/4.1.11.zip
-        URL_MD5 fc46dd989c4e61b1d6a6019ed3170f86
+        URL https://github.com/zelang-dev/opentls/archive/refs/tags/4.1.12.zip
+        URL_MD5 0d95f587b35fa12991e42d763cf5f5bf
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
@@ -103,7 +103,7 @@ else()
     add_definitions("/wd4244 /wd4267 /wd4033 /wd4715 /wd4996")
 endif()
 
-find_package(ZLIB CONFIG)
+find_package(ZLIB)
 if(ZLIB_FOUND)
     target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
     message(STATUS "Cmake FindZLIB: using ZLIB includes at: ${ZLIB_INCLUDE_DIR}")
@@ -120,7 +120,7 @@ else()
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "Build tests" FORCE)
     set(ZLIB_BUILD_MINIZIP OFF CACHE BOOL "Build libminizip" FORCE)
     set(ZLIB_INSTALL ON CACHE BOOL "Install zlib" FORCE)
-    target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
+	target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${INSTALL_INC_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
 endif()
 target_link_libraries(${PROJECT_NAME} PUBLIC ${ZLIB_LIBRARIES})
 
@@ -233,8 +233,13 @@ set(CPACK_RPM_PACKAGE_URL "https://zelang-dev.github.io/c-asio/")
 set(CPACK_RPM_PACKAGE_ARCHITECTURE "noarch")
 
 set(CMAKE_INSTALL_CONFIG_NAME ${CMAKE_BUILD_TYPE})
+if(NOT ZLIB_FOUND)
+	set(PACKAGE_ASIO raii cthreads uv opentls ZLIB)
+else()
+	set(PACKAGE_ASIO raii cthreads uv opentls)
+endif()
 install(
-    TARGETS ${PROJECT_NAME} raii uv opentls
+    TARGETS ${PROJECT_NAME} ${PACKAGE_ASIO}
     EXPORT "${PROJECT_NAME}Targets"
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
