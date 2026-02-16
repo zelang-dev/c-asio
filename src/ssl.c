@@ -953,8 +953,6 @@ static void_t thrd_worker_thread(args_t args) {
 	return no_error ? $(true) : nullptr;
 }
 
-ASIO_pkey_t *pkey_create(u32 num_pairs, ...) {}
-
 EVP_PKEY *rsa_pkey(int keylength) {
     EVP_PKEY *pkey = EVP_PKEY_new();
     if (!pkey) {

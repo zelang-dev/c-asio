@@ -39,8 +39,8 @@ endif()
 find_package(libuv QUIET)
 if(NOT libuv_FOUND)
     FetchContent_Declare(libuv
-        URL https://github.com/libuv/libuv/archive/refs/tags/v1.51.0.zip
-        URL_MD5 89997b2ecd52664fa117ffc82560f5eb
+        URL https://github.com/libuv/libuv/archive/refs/tags/v1.52.0.zip
+        #URL_MD5 89997b2ecd52664fa117ffc82560f5eb
     )
 	if(WIN32)
     	add_definitions("/wd4701 /wd4245 /wd4244 /wd4267 /wd4334 /wd4152 /wd4702")
@@ -51,8 +51,8 @@ endif()
 find_package(opentls QUIET)
 if(NOT opentls_FOUND)
     FetchContent_Declare(opentls
-        URL https://github.com/zelang-dev/opentls/archive/refs/tags/4.1.12.zip
-        URL_MD5 0d95f587b35fa12991e42d763cf5f5bf
+        URL https://github.com/zelang-dev/opentls/archive/refs/tags/4.1.16.zip
+        #URL_MD5 0d95f587b35fa12991e42d763cf5f5bf
     )
     if(WIN32)
         add_definitions(-DOPENSSL_MSVC_STATIC_RT=TRUE)
