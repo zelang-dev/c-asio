@@ -103,7 +103,7 @@ else()
     add_definitions("/wd4244 /wd4267 /wd4033 /wd4715 /wd4996")
 endif()
 
-find_package(ZLIB)
+find_package(ZLIB CONFIG)
 if(ZLIB_FOUND)
     target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${ZLIB_INCLUDE_DIR} $<INSTALL_INTERFACE:${INSTALL_INC_DIR})
     message(STATUS "Cmake FindZLIB: using ZLIB includes at: ${ZLIB_INCLUDE_DIR}")
@@ -233,11 +233,7 @@ set(CPACK_RPM_PACKAGE_URL "https://zelang-dev.github.io/c-asio/")
 set(CPACK_RPM_PACKAGE_ARCHITECTURE "noarch")
 
 set(CMAKE_INSTALL_CONFIG_NAME ${CMAKE_BUILD_TYPE})
-if(NOT ZLIB_FOUND)
-	set(PACKAGE_ASIO raii cthreads uv opentls ZLIB)
-else()
-	set(PACKAGE_ASIO raii cthreads uv opentls)
-endif()
+set(PACKAGE_ASIO raii cthreads uv opentls)
 install(
     TARGETS ${PROJECT_NAME} ${PACKAGE_ASIO}
     EXPORT "${PROJECT_NAME}Targets"
